@@ -7,6 +7,10 @@ import {
   safeCheckoutError,
 } from "@/lib/checkout";
 import { calculateBasket, getMarket, normalizeBasket } from "@/lib/catalog";
+import {
+  createPaymentsV1ReturnUrl,
+  createStoredOrder,
+} from "@/lib/checkout-payments";
 import { getSavedCard } from "@/lib/session-store";
 
 export const runtime = "nodejs";
@@ -41,6 +45,19 @@ export async function POST(request: Request) {
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
     const reference = createReference("saved");
+    const origin = new URL(request.url).origin;
+    const paymentMethod = "Saved credit card";
+    const cardSummary = `${savedCard.scheme ?? "Card"} ending ${
+      savedCard.last4 ?? "----"
+    }`;
+    const require3ds = body.require3ds === true;
+    const threeDsReturnParams = {
+      origin,
+      reference,
+      amount: basket.totalAmount,
+      currency: market.currency,
+      paymentMethod,
+    };
     const payment = await checkoutRequest<PaymentResponse>("/payments", {
       idempotencyKey: createIdempotencyKey("saved-card"),
       body: {
@@ -57,7 +74,33 @@ export async function POST(request: Request) {
           id: savedCard.customerId,
           email: savedCard.email,
         },
+        ...(require3ds
+          ? {
+              "3ds": {
+                enabled: true,
+              },
+              success_url: createPaymentsV1ReturnUrl({
+                ...threeDsReturnParams,
+                status: "success",
+              }),
+              failure_url: createPaymentsV1ReturnUrl({
+                ...threeDsReturnParams,
+                status: "failure",
+              }),
+            }
+          : {}),
       },
+    });
+
+    await createStoredOrder({
+      payment,
+      reference,
+      amount: basket.totalAmount,
+      currency: market.currency,
+      market: market.code,
+      method: paymentMethod,
+      customerEmail: savedCard.email,
+      cardSummary,
     });
 
     return NextResponse.json({
@@ -72,10 +115,8 @@ export async function POST(request: Request) {
         reference,
         amount: basket.totalAmount,
         currency: market.currency,
-        paymentMethod: "Saved credit card",
-        cardSummary: `${savedCard.scheme ?? "Card"} ending ${
-          savedCard.last4 ?? "----"
-        }`,
+        paymentMethod,
+        cardSummary,
       },
     });
   } catch (error) {

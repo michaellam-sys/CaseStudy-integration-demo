@@ -136,6 +136,7 @@ export function CheckoutClient() {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState("demo.customer@example.com");
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
+  const [require3ds, setRequire3ds] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
 
@@ -332,9 +333,15 @@ export function CheckoutClient() {
       expiryMonth,
       expiryYear,
       cvv,
+      require3ds,
     });
 
     if (data) {
+      if (require3ds && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+        return;
+      }
+
       if (data.approved) {
         goToPaymentComplete(data);
         return;
@@ -355,9 +362,15 @@ export function CheckoutClient() {
     const data = await postJson("/api/payments-v1/saved-card", {
       market: market.code,
       basket: items,
+      require3ds,
     });
 
     if (data) {
+      if (require3ds && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+        return;
+      }
+
       if (data.approved) {
         goToPaymentComplete(data);
         return;
@@ -507,6 +520,22 @@ export function CheckoutClient() {
                   />
                 </label>
               </div>
+              <label className="flex items-start gap-3 rounded-lg border border-[#323416]/10 bg-[#FFFFFD] p-4 text-sm text-[#323416]">
+                <input
+                  type="checkbox"
+                  checked={require3ds}
+                  onChange={(event) => setRequire3ds(event.target.checked)}
+                  className="mt-1 h-4 w-4 accent-[#323416]"
+                />
+                <span>
+                  <span className="block font-semibold">
+                    Require 3DS authentication
+                  </span>
+                  <span className="mt-1 block text-[#323416]/65">
+                    Request Checkout.com 3DS for this payment attempt.
+                  </span>
+                </span>
+              </label>
               <button
                 disabled={isLoading || !basket}
                 className="h-11 rounded-md bg-[#323416] px-4 text-sm font-semibold text-white disabled:opacity-60"
@@ -529,6 +558,22 @@ export function CheckoutClient() {
                       Stored in server memory for {savedCard.email}
                     </p>
                   </div>
+                  <label className="mt-4 flex items-start gap-3 rounded-lg border border-[#323416]/10 bg-[#FFFFFD] p-4 text-sm text-[#323416]">
+                    <input
+                      type="checkbox"
+                      checked={require3ds}
+                      onChange={(event) => setRequire3ds(event.target.checked)}
+                      className="mt-1 h-4 w-4 accent-[#323416]"
+                    />
+                    <span>
+                      <span className="block font-semibold">
+                        Require 3DS authentication
+                      </span>
+                      <span className="mt-1 block text-[#323416]/65">
+                        Request Checkout.com 3DS for this saved-card payment.
+                      </span>
+                    </span>
+                  </label>
                   <button
                     onClick={handleSavedCard}
                     disabled={isLoading || !basket}

@@ -46,13 +46,19 @@ function formatDate(value?: string) {
   }).format(new Date(value));
 }
 
-function getPaymentResultCopy(status: string, isHosted: boolean) {
+function getPaymentResultCopy(
+  status: string,
+  isHosted: boolean,
+  isPaymentsV1ThreeDs: boolean,
+) {
   const normalizedStatus = status.toLowerCase();
 
   if (normalizedStatus === "cancel" || normalizedStatus === "cancelled") {
     return {
       eyebrow: "Payment cancelled",
-      title: "The hosted payment was cancelled.",
+      title: isHosted
+        ? "The hosted payment was cancelled."
+        : "The payment was cancelled.",
       description:
         "Checkout.com returned without completing the payment. Your basket is still available if you want to try again.",
     };
@@ -80,6 +86,15 @@ function getPaymentResultCopy(status: string, isHosted: boolean) {
     };
   }
 
+  if (isPaymentsV1ThreeDs) {
+    return {
+      eyebrow: "Payment returned",
+      title: "Thanks, 3DS has returned.",
+      description:
+        "Checkout.com returned to this receipt page after the 3DS step. In production, use payment details or webhooks before fulfillment.",
+    };
+  }
+
   return {
     eyebrow: "Payment complete",
     title: "Thanks, the payment has been submitted.",
@@ -88,8 +103,14 @@ function getPaymentResultCopy(status: string, isHosted: boolean) {
   };
 }
 
-function shouldClearBasket(status: string, isHosted: boolean) {
-  return isHosted && status.toLowerCase() === "success";
+function shouldClearBasket(
+  status: string,
+  isHosted: boolean,
+  isPaymentsV1ThreeDs: boolean,
+) {
+  return (
+    (isHosted || isPaymentsV1ThreeDs) && status.toLowerCase() === "success"
+  );
 }
 
 export default async function PaymentCompletePage({
@@ -99,11 +120,18 @@ export default async function PaymentCompletePage({
   const checkoutReference = params["cko-session-id"] ?? params["cko-payment-id"];
   const status = params.status ?? "approved";
   const isHosted = params.source === "hpp";
-  const copy = getPaymentResultCopy(status, isHosted);
+  const isPaymentsV1ThreeDs = params.source === "payments-v1-3ds";
+  const copy = getPaymentResultCopy(status, isHosted, isPaymentsV1ThreeDs);
 
   return (
     <main className="mx-auto max-w-4xl px-5 py-12">
-      <ClearBasketOnComplete clearImmediately={shouldClearBasket(status, isHosted)} />
+      <ClearBasketOnComplete
+        clearImmediately={shouldClearBasket(
+          status,
+          isHosted,
+          isPaymentsV1ThreeDs,
+        )}
+      />
       <section className="rounded-lg border border-[#323416]/10 bg-white p-8">
         <p className="text-sm font-semibold uppercase tracking-wide text-[#8C9E6E]">
           {copy.eyebrow}

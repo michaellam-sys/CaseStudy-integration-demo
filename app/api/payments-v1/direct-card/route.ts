@@ -7,6 +7,10 @@ import {
   safeCheckoutError,
 } from "@/lib/checkout";
 import { calculateBasket, getMarket, normalizeBasket } from "@/lib/catalog";
+import {
+  createPaymentsV1ReturnUrl,
+  createStoredOrder,
+} from "@/lib/checkout-payments";
 
 export const runtime = "nodejs";
 
@@ -31,7 +35,20 @@ export async function POST(request: Request) {
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
     const reference = createReference("direct");
+    const origin = new URL(request.url).origin;
     const cardNumber = String(body.cardNumber ?? "").replace(/\s/g, "");
+    const cardholderName = String(body.cardholderName ?? "").trim();
+    const email = String(body.email ?? "").trim();
+    const paymentMethod = "Direct credit card";
+    const cardSummary = `Card ending ${cardNumber.slice(-4)}`;
+    const require3ds = body.require3ds === true;
+    const threeDsReturnParams = {
+      origin,
+      reference,
+      amount: basket.totalAmount,
+      currency: market.currency,
+      paymentMethod,
+    };
     const payment = await checkoutRequest<PaymentResponse>("/payments", {
       idempotencyKey: createIdempotencyKey("direct-card"),
       body: {
@@ -41,7 +58,7 @@ export async function POST(request: Request) {
           expiry_month: Number(body.expiryMonth),
           expiry_year: Number(body.expiryYear),
           cvv: String(body.cvv ?? ""),
-          name: String(body.cardholderName ?? "").trim(),
+          name: cardholderName,
           billing_address: {
             country: market.country,
           },
@@ -52,9 +69,36 @@ export async function POST(request: Request) {
         processing_channel_id: processingChannelId,
         capture: true,
         customer: {
-          email: String(body.email ?? "").trim(),
+          email,
         },
+        ...(require3ds
+          ? {
+              "3ds": {
+                enabled: true,
+              },
+              success_url: createPaymentsV1ReturnUrl({
+                ...threeDsReturnParams,
+                status: "success",
+              }),
+              failure_url: createPaymentsV1ReturnUrl({
+                ...threeDsReturnParams,
+                status: "failure",
+              }),
+            }
+          : {}),
       },
+    });
+
+    await createStoredOrder({
+      payment,
+      reference,
+      amount: basket.totalAmount,
+      currency: market.currency,
+      market: market.code,
+      method: paymentMethod,
+      customerEmail: email,
+      customerName: cardholderName,
+      cardSummary,
     });
 
     return NextResponse.json({
@@ -69,8 +113,8 @@ export async function POST(request: Request) {
         reference,
         amount: basket.totalAmount,
         currency: market.currency,
-        paymentMethod: "Direct credit card",
-        cardSummary: `Card ending ${cardNumber.slice(-4)}`,
+        paymentMethod,
+        cardSummary,
       },
     });
   } catch (error) {

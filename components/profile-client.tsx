@@ -1,9 +1,19 @@
 "use client";
 
+import {
+  ComponentName,
+  loadCheckoutWebComponents,
+  type Component,
+  type PaymentSessionResponse,
+  type TokenizeResult,
+} from "@checkout.com/checkout-web-components";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { getMarket } from "@/lib/catalog";
+import { flowAppearance } from "@/lib/flow/appearance";
+
+type Market = ReturnType<typeof getMarket>;
 
 type SavedCard = {
   email: string;
@@ -19,9 +29,263 @@ type ApiState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
+type TokenizationMode = "web-components" | "direct-api";
+
+type TokenizationSessionResponse = {
+  paymentSession: PaymentSessionResponse;
+  publicKey: string;
+};
+
 async function readError(response: Response) {
   const data = await response.json().catch(() => ({}));
   return data.error ?? data.errorCodes?.[0] ?? "Request failed.";
+}
+
+function getClientPublicKey() {
+  return (
+    process.env.NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY ??
+    process.env.NEXT_PUBLIC_CKO_PK
+  );
+}
+
+function validateEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function readCardToken(result: TokenizeResult | void) {
+  if (
+    result?.type !== ComponentName.Card ||
+    !result.data.token.startsWith("tok_")
+  ) {
+    throw new Error("Checkout.com did not return a card token.");
+  }
+
+  return result.data.token;
+}
+
+function WebComponentsCardTokenizer({
+  isSaving,
+  market,
+  onSaveToken,
+  onStateChange,
+}: {
+  isSaving: boolean;
+  market: Market;
+  onSaveToken: (
+    token: string,
+    email: string,
+    successMessage: string,
+  ) => Promise<void>;
+  onStateChange: (state: ApiState) => void;
+}) {
+  const [email, setEmail] = useState("demo.customer@example.com");
+  const [isReady, setIsReady] = useState(false);
+  const cardContainerRef = useRef<HTMLDivElement | null>(null);
+  const cardComponentRef = useRef<Component | null>(null);
+
+  useEffect(() => {
+    const normalizedEmail = email.trim();
+
+    if (!validateEmail(normalizedEmail)) {
+      cardComponentRef.current?.unmount();
+      cardComponentRef.current = null;
+      queueMicrotask(() => setIsReady(false));
+      return;
+    }
+
+    const publicKey = getClientPublicKey();
+
+    if (!publicKey) {
+      onStateChange({
+        status: "error",
+        message:
+          "Missing NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY or NEXT_PUBLIC_CKO_PK in .env.local.",
+      });
+      return;
+    }
+
+    const checkoutPublicKey = publicKey;
+
+    if (!cardContainerRef.current) {
+      return;
+    }
+
+    let isMounted = true;
+    const cardContainer = cardContainerRef.current;
+
+    async function mountCardComponent() {
+      setIsReady(false);
+      cardComponentRef.current?.unmount();
+      cardComponentRef.current = null;
+
+      try {
+        const sessionResponse = await fetch(
+          "/api/profile/tokenization-session",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              market: market.code,
+              customer: {
+                email: normalizedEmail,
+              },
+            }),
+          },
+        );
+
+        if (!sessionResponse.ok) {
+          throw new Error(await readError(sessionResponse));
+        }
+
+        const sessionData =
+          (await sessionResponse.json()) as TokenizationSessionResponse;
+        const checkout = await loadCheckoutWebComponents({
+          paymentSession: sessionData.paymentSession,
+          publicKey: sessionData.publicKey || checkoutPublicKey,
+          environment: "sandbox",
+          appearance: flowAppearance,
+          componentOptions: {
+            data: {
+              email: normalizedEmail,
+              billingCountry: market.country,
+            },
+          },
+        });
+        const card = checkout.create("card", {
+          displayCardholderName: "top",
+          displayCvv: "mandatory",
+          showPayButton: false,
+          data: {
+            email: normalizedEmail,
+          },
+        });
+        const isAvailable = await card.isAvailable();
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!isAvailable) {
+          onStateChange({
+            status: "error",
+            message:
+              "Checkout.com card tokenization is unavailable for this session.",
+          });
+          return;
+        }
+
+        card.mount(cardContainer);
+        cardComponentRef.current = card;
+        setIsReady(true);
+      } catch (error) {
+        if (isMounted) {
+          onStateChange({
+            status: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Unable to mount Checkout.com card tokenization.",
+          });
+        }
+      }
+    }
+
+    mountCardComponent();
+
+    return () => {
+      isMounted = false;
+      cardComponentRef.current?.unmount();
+      cardComponentRef.current = null;
+      setIsReady(false);
+    };
+  }, [email, market.code, market.country, onStateChange]);
+
+  async function handleSaveWithWebComponents(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const normalizedEmail = email.trim();
+
+    if (!validateEmail(normalizedEmail)) {
+      onStateChange({
+        status: "error",
+        message: "Enter a valid customer email.",
+      });
+      return;
+    }
+
+    const card = cardComponentRef.current;
+
+    if (!card || !isReady) {
+      onStateChange({
+        status: "error",
+        message: "Checkout.com card tokenization is still loading.",
+      });
+      return;
+    }
+
+    if (!card.isValid()) {
+      onStateChange({
+        status: "error",
+        message: "Complete the card fields before saving.",
+      });
+      return;
+    }
+
+    onStateChange({ status: "loading" });
+
+    try {
+      const token = readCardToken(await card.tokenize());
+      await onSaveToken(
+        token,
+        normalizedEmail,
+        "Saved card instrument created from Checkout Web Components tokenization.",
+      );
+    } catch (error) {
+      onStateChange({
+        status: "error",
+        message:
+          error instanceof Error ? error.message : "Unable to save card.",
+      });
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSaveWithWebComponents}
+      className="mt-5 grid gap-4 rounded-lg border border-[#323416]/10 bg-white p-5"
+    >
+      <label className="grid gap-2 text-sm font-medium text-[#323416]">
+        Email
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="h-11 rounded-md border border-[#323416]/20 px-3"
+        />
+      </label>
+      <div
+        ref={cardContainerRef}
+        className="min-h-[260px] rounded-md border border-[#323416]/10 bg-[#FFFFFD] p-4"
+      >
+        {!isReady && (
+          <p className="text-sm text-[#323416]/65">
+            Loading Checkout.com card tokenization...
+          </p>
+        )}
+      </div>
+      <button
+        disabled={isSaving || !isReady}
+        className="h-11 rounded-md bg-[#323416] px-4 text-sm font-semibold text-white disabled:opacity-60"
+      >
+        {isSaving ? "Saving..." : "Tokenize with Web Components and save"}
+      </button>
+    </form>
+  );
 }
 
 export function ProfileClient() {
@@ -29,6 +293,8 @@ export function ProfileClient() {
   const market = getMarket(searchParams.get("market"));
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
   const [state, setState] = useState<ApiState>({ status: "idle" });
+  const [tokenizationMode, setTokenizationMode] =
+    useState<TokenizationMode>("web-components");
   const checkoutHref = useMemo(
     () => `/checkout?market=${market.code}`,
     [market.code],
@@ -40,12 +306,39 @@ export function ProfileClient() {
       .then((data) => setSavedCard(data.savedCard));
   }, []);
 
-  async function handleSaveCard(formData: FormData) {
+  async function saveTokenizedCard(
+    token: string,
+    email: string,
+    successMessage: string,
+  ) {
+    const saveResponse = await fetch("/api/profile/saved-card", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        token,
+        email,
+        market: market.code,
+      }),
+    });
+
+    if (!saveResponse.ok) {
+      throw new Error(await readError(saveResponse));
+    }
+
+    const savedData = await saveResponse.json();
+    setSavedCard(savedData.savedCard);
+    setState({
+      status: "success",
+      message: successMessage,
+    });
+  }
+
+  async function handleDirectSaveCard(formData: FormData) {
     setState({ status: "loading" });
 
-    const publicKey =
-      process.env.NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY ??
-      process.env.NEXT_PUBLIC_CKO_PK;
+    const publicKey = getClientPublicKey();
 
     if (!publicKey) {
       setState({
@@ -66,14 +359,12 @@ export function ProfileClient() {
     );
     const cvv = String(formData.get("cvv") ?? "").trim();
 
-    if (
-      !email ||
-      !cardholderName ||
-      !cardNumber ||
-      !expiryMonth ||
-      !expiryYear ||
-      !cvv
-    ) {
+    if (!validateEmail(email)) {
+      setState({ status: "error", message: "Enter a valid customer email." });
+      return;
+    }
+
+    if (!cardholderName || !cardNumber || !expiryMonth || !expiryYear || !cvv) {
       setState({ status: "error", message: "Complete all card fields." });
       return;
     }
@@ -86,59 +377,40 @@ export function ProfileClient() {
       }
 
       const config = await configResponse.json();
-      const tokenResponse = await fetch(
-        `${config.apiBaseUrl}/tokens`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${publicKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            type: "card",
-            number: cardNumber,
-            expiry_month: expiryMonth,
-            expiry_year: expiryYear,
-            name: cardholderName,
-            cvv,
-            billing_address: {
-              country: market.country,
-            },
-          }),
+      const tokenResponse = await fetch(`${config.apiBaseUrl}/tokens`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${publicKey}`,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          type: "card",
+          number: cardNumber,
+          expiry_month: expiryMonth,
+          expiry_year: expiryYear,
+          name: cardholderName,
+          cvv,
+          billing_address: {
+            country: market.country,
+          },
+        }),
+      });
 
       if (!tokenResponse.ok) {
         throw new Error(await readError(tokenResponse));
       }
 
       const tokenData = await tokenResponse.json();
-      const saveResponse = await fetch("/api/profile/saved-card", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          token: tokenData.token,
-          email,
-          market: market.code,
-        }),
-      });
-
-      if (!saveResponse.ok) {
-        throw new Error(await readError(saveResponse));
-      }
-
-      const savedData = await saveResponse.json();
-      setSavedCard(savedData.savedCard);
-      setState({
-        status: "success",
-        message: "Saved card instrument created for this demo session.",
-      });
+      await saveTokenizedCard(
+        tokenData.token,
+        email,
+        "Saved card instrument created from direct Tokens API tokenization.",
+      );
     } catch (error) {
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : "Unable to save card.",
+        message:
+          error instanceof Error ? error.message : "Unable to save card.",
       });
     }
   }
@@ -168,78 +440,117 @@ export function ProfileClient() {
           instrument reference in server memory.
         </p>
 
-        <form
-          action={handleSaveCard}
-          className="mt-8 grid gap-4 rounded-lg border border-[#323416]/10 bg-white p-5"
-        >
-          <label className="grid gap-2 text-sm font-medium text-[#323416]">
-            Email
-            <input
-              name="email"
-              type="email"
-              required
-              defaultValue="demo.customer@example.com"
-              className="h-11 rounded-md border border-[#323416]/20 px-3"
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-[#323416]">
-            Cardholder name
-            <input
-              name="cardholderName"
-              required
-              defaultValue="Demo Customer"
-              className="h-11 rounded-md border border-[#323416]/20 px-3"
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-[#323416]">
-            Card number
-            <input
-              name="cardNumber"
-              inputMode="numeric"
-              required
-              placeholder="Use a Checkout.com sandbox card"
-              className="h-11 rounded-md border border-[#323416]/20 px-3"
-            />
-          </label>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <label className="grid gap-2 text-sm font-medium text-[#323416]">
-              Expiry month
-              <input
-                name="expiryMonth"
-                inputMode="numeric"
-                required
-                placeholder="12"
-                className="h-11 rounded-md border border-[#323416]/20 px-3"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-[#323416]">
-              Expiry year
-              <input
-                name="expiryYear"
-                inputMode="numeric"
-                required
-                placeholder="2030"
-                className="h-11 rounded-md border border-[#323416]/20 px-3"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-[#323416]">
-              CVV
-              <input
-                name="cvv"
-                inputMode="numeric"
-                required
-                placeholder="100"
-                className="h-11 rounded-md border border-[#323416]/20 px-3"
-              />
-            </label>
+        <div className="mt-8 rounded-lg border border-[#323416]/10 bg-white p-1">
+          <div className="grid grid-cols-2 gap-1">
+            {[
+              {
+                id: "web-components" as const,
+                label: "Checkout Web Components",
+              },
+              { id: "direct-api" as const, label: "Direct Tokens API" },
+            ].map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => {
+                  setTokenizationMode(mode.id);
+                  setState({ status: "idle" });
+                }}
+                className={`h-11 rounded-md px-3 text-sm font-semibold ${
+                  tokenizationMode === mode.id
+                    ? "bg-[#323416] text-white"
+                    : "text-[#323416]"
+                }`}
+              >
+                {mode.label}
+              </button>
+            ))}
           </div>
-          <button
-            disabled={state.status === "loading"}
-            className="h-11 rounded-md bg-[#323416] px-4 text-sm font-semibold text-white disabled:opacity-60"
+        </div>
+
+        {tokenizationMode === "web-components" ? (
+          <WebComponentsCardTokenizer
+            isSaving={state.status === "loading"}
+            market={market}
+            onSaveToken={saveTokenizedCard}
+            onStateChange={setState}
+          />
+        ) : (
+          <form
+            action={handleDirectSaveCard}
+            className="mt-5 grid gap-4 rounded-lg border border-[#323416]/10 bg-white p-5"
           >
-            {state.status === "loading" ? "Saving..." : "Tokenize and save card"}
-          </button>
-        </form>
+            <label className="grid gap-2 text-sm font-medium text-[#323416]">
+              Email
+              <input
+                name="email"
+                type="email"
+                required
+                defaultValue="demo.customer@example.com"
+                className="h-11 rounded-md border border-[#323416]/20 px-3"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-[#323416]">
+              Cardholder name
+              <input
+                name="cardholderName"
+                required
+                defaultValue="Demo Customer"
+                className="h-11 rounded-md border border-[#323416]/20 px-3"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-[#323416]">
+              Card number
+              <input
+                inputMode="numeric"
+                name="cardNumber"
+                required
+                placeholder="Use a Checkout.com sandbox card"
+                className="h-11 rounded-md border border-[#323416]/20 px-3"
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="grid gap-2 text-sm font-medium text-[#323416]">
+                Expiry month
+                <input
+                  name="expiryMonth"
+                  inputMode="numeric"
+                  required
+                  placeholder="12"
+                  className="h-11 rounded-md border border-[#323416]/20 px-3"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-[#323416]">
+                Expiry year
+                <input
+                  name="expiryYear"
+                  inputMode="numeric"
+                  required
+                  placeholder="2030"
+                  className="h-11 rounded-md border border-[#323416]/20 px-3"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-[#323416]">
+                CVV
+                <input
+                  name="cvv"
+                  inputMode="numeric"
+                  required
+                  placeholder="100"
+                  className="h-11 rounded-md border border-[#323416]/20 px-3"
+                />
+              </label>
+            </div>
+            <button
+              disabled={state.status === "loading"}
+              className="h-11 rounded-md bg-[#323416] px-4 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {state.status === "loading"
+                ? "Saving..."
+                : "Tokenize with direct API and save"}
+            </button>
+          </form>
+        )}
 
         {state.status !== "idle" && (
           <p

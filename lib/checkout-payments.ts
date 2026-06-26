@@ -67,6 +67,33 @@ export function cardSummaryFromPayment(payment: CheckoutPaymentResponse) {
   return `${payment.source.scheme ?? "Card"} ending ${payment.source.last4}`;
 }
 
+export function createPaymentsV1ReturnUrl({
+  origin,
+  status,
+  reference,
+  amount,
+  currency,
+  paymentMethod,
+}: {
+  origin: string;
+  status: "success" | "failure";
+  reference: string;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+}) {
+  const url = new URL(`${origin}/payment-complete`);
+
+  url.searchParams.set("source", "payments-v1-3ds");
+  url.searchParams.set("status", status);
+  url.searchParams.set("reference", reference);
+  url.searchParams.set("amount", String(amount));
+  url.searchParams.set("currency", currency);
+  url.searchParams.set("paymentMethod", paymentMethod);
+
+  return url.toString();
+}
+
 export async function createStoredOrder(input: {
   payment: CheckoutPaymentResponse;
   reference: string;
