@@ -54,6 +54,16 @@ export function BasketClient() {
           >
             EUR
           </Link>
+          <Link
+            href="/basket?market=US"
+            className={`rounded-md border px-3 py-2 text-sm font-medium ${
+              market.code === "US"
+                ? "border-[#323416] bg-[#323416] text-white"
+                : "border-[#323416]/20 text-[#323416]"
+            }`}
+          >
+            USD
+          </Link>
         </div>
       </div>
 
@@ -170,7 +180,7 @@ export function BasketClient() {
           </div>
           <div className="mt-6 grid gap-3">
             <Link
-              href={`/checkout-v2?market=${market.code}`}
+              href={`/checkout-flow?market=${market.code}`}
               className={`inline-flex h-11 items-center justify-center rounded-md px-4 text-sm font-semibold ${
                 basket
                   ? "bg-[#323416] text-white"

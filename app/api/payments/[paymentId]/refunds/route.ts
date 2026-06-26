@@ -57,7 +57,7 @@ export async function POST(request: Request, { params }: RefundRouteProps) {
           amount,
           reference,
           metadata: {
-            demo: "caseco-checkout-v2",
+            demo: "caseco-flow-v2",
           },
         },
       },

@@ -1,5 +1,10 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { CheckoutClient } from "@/components/checkout/checkout-client";
 
 export default function CheckoutPage() {
-  redirect("/checkout-v2");
+  return (
+    <Suspense>
+      <CheckoutClient />
+    </Suspense>
+  );
 }

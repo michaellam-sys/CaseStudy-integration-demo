@@ -49,6 +49,7 @@ export type PaymentRecord = {
 export type OrderRecord = {
   reference: string;
   paymentId?: string;
+  paymentSessionId?: string;
   status: string;
   amount: number;
   currency: string;
@@ -63,9 +64,10 @@ export type OrderRecord = {
 
 type SessionData = {
   savedCard?: SavedCard;
+  flowCustomerIdsByEmail?: Record<string, string>;
   orders?: Record<string, OrderRecord>;
   paymentReferences?: Record<string, string>;
-  latest3dsPaymentId?: string;
+  paymentSessionReferences?: Record<string, string>;
   expiresAt: number;
 };
 
@@ -157,8 +159,10 @@ function activeSession(sessionId: string): SessionData {
   }
 
   const session: SessionData = {
+    flowCustomerIdsByEmail: {},
     orders: {},
     paymentReferences: {},
+    paymentSessionReferences: {},
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
   store.casecoSessions?.set(sessionId, session);
@@ -193,6 +197,35 @@ export async function clearSavedCard() {
   delete session.savedCard;
 }
 
+function normalizeEmailKey(email: string) {
+  return email.trim().toLowerCase();
+}
+
+export async function getFlowCustomerIdByEmail(email: string) {
+  const sessionId = await getOrCreateSessionId();
+  const session = activeSession(sessionId);
+  return session.flowCustomerIdsByEmail?.[normalizeEmailKey(email)];
+}
+
+export async function saveFlowCustomerIdForEmail(
+  email: string,
+  customerId: string,
+) {
+  const normalizedEmail = normalizeEmailKey(email);
+
+  if (!normalizedEmail || !customerId.startsWith("cus_")) {
+    return undefined;
+  }
+
+  const sessionId = await getOrCreateSessionId();
+  const session = activeSession(sessionId);
+  session.flowCustomerIdsByEmail = session.flowCustomerIdsByEmail ?? {};
+  session.flowCustomerIdsByEmail[normalizedEmail] = customerId;
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+
+  return customerId;
+}
+
 export function toSavedCardResponse(savedCard?: SavedCard) {
   if (!savedCard) {
     return { savedCard: null };
@@ -219,14 +252,15 @@ export async function saveOrder(record: OrderRecord) {
 
   session.orders = session.orders ?? {};
   session.paymentReferences = session.paymentReferences ?? {};
+  session.paymentSessionReferences = session.paymentSessionReferences ?? {};
   session.orders[order.reference] = order;
 
   if (order.paymentId) {
     session.paymentReferences[order.paymentId] = order.reference;
   }
 
-  if (order.method === "Tokenized Card + 3DS" && order.paymentId) {
-    session.latest3dsPaymentId = order.paymentId;
+  if (order.paymentSessionId) {
+    session.paymentSessionReferences[order.paymentSessionId] = order.reference;
   }
 
   return order;
@@ -246,10 +280,12 @@ export async function getOrderByPaymentId(paymentId: string) {
   return reference ? session.orders?.[reference] : undefined;
 }
 
-export async function getLatest3dsPaymentId() {
+export async function getOrderByPaymentSessionId(paymentSessionId: string) {
   const sessionId = await getOrCreateSessionId();
   const session = activeSession(sessionId);
-  return session.latest3dsPaymentId;
+  const reference = session.paymentSessionReferences?.[paymentSessionId];
+
+  return reference ? session.orders?.[reference] : undefined;
 }
 
 export async function linkPaymentToOrder(reference: string, paymentId: string) {
@@ -264,6 +300,26 @@ export async function linkPaymentToOrder(reference: string, paymentId: string) {
   session.paymentReferences = session.paymentReferences ?? {};
   session.paymentReferences[paymentId] = reference;
   order.paymentId = paymentId;
+
+  if (!order.payment) {
+    const now = new Date().toISOString();
+
+    order.payment = {
+      paymentId,
+      reference: order.reference,
+      amount: order.amount,
+      currency: order.currency,
+      market: order.market,
+      method: order.method,
+      status: order.status,
+      customerEmail: order.customerEmail,
+      customerName: order.customerName,
+      createdAt: now,
+      updatedAt: now,
+    };
+  } else {
+    order.payment.paymentId = paymentId;
+  }
 
   return order;
 }
@@ -297,7 +353,11 @@ export async function updatePaymentRecord(
   return order;
 }
 
-export function findOrderForWebhook(paymentId?: string, reference?: string) {
+export function findOrderForWebhook(
+  paymentId?: string,
+  reference?: string,
+  paymentSessionId?: string,
+) {
   for (const session of store.casecoSessions?.values() ?? []) {
     if (session.expiresAt < Date.now()) {
       continue;
@@ -312,6 +372,13 @@ export function findOrderForWebhook(paymentId?: string, reference?: string) {
 
     if (reference && session.orders?.[reference]) {
       return session.orders[reference];
+    }
+
+    if (paymentSessionId && session.paymentSessionReferences?.[paymentSessionId]) {
+      const orderReference = session.paymentSessionReferences[paymentSessionId];
+      if (orderReference && session.orders?.[orderReference]) {
+        return session.orders[orderReference];
+      }
     }
   }
 

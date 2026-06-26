@@ -11,8 +11,8 @@ export function SiteHeader() {
           <Link href="/">Home</Link>
           <Link href="/basket">Basket</Link>
           <Link href="/profile">Profile</Link>
-          <Link href="/checkout-v1">Checkout (v1)</Link>
-          <Link href="/checkout-v2">Checkout (v2)</Link>
+          <Link href="/checkout">Checkout</Link>
+          <Link href="/checkout-flow">Checkout Flow</Link>
         </nav>
       </div>
     </header>

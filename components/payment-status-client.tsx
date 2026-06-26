@@ -6,6 +6,7 @@ type PaymentStatus = {
   id?: string;
   status?: string;
   responseSummary?: string;
+  cardSummary?: string;
   availableToRefund?: number;
   totalRefunded?: number;
   currency?: string;
@@ -100,6 +101,11 @@ export function PaymentStatusClient({ paymentId }: { paymentId?: string }) {
       {status.responseSummary && (
         <p className="mt-1 text-sm text-[#323416]/70">
           Gateway response: {status.responseSummary}
+        </p>
+      )}
+      {status.cardSummary && (
+        <p className="mt-1 text-sm text-[#323416]/70">
+          Card: {status.cardSummary}
         </p>
       )}
 

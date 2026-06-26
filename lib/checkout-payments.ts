@@ -1,7 +1,10 @@
 import { checkoutRequest } from "./checkout";
 import {
   getOrderByPaymentId,
+  getOrderByReference,
+  linkPaymentToOrder,
   saveOrder,
+  saveFlowCustomerIdForEmail,
   updatePaymentRecord,
   type OrderEvent,
   type OrderRecord,
@@ -135,6 +138,69 @@ export async function createStoredOrder(input: {
   return saveOrder(order);
 }
 
+export async function createPendingFlowOrder(input: {
+  reference: string;
+  paymentSessionId?: string;
+  amount: number;
+  currency: string;
+  market: string;
+  customerEmail?: string;
+  customerName?: string;
+}) {
+  const now = new Date().toISOString();
+  const order: OrderRecord = {
+    reference: input.reference,
+    paymentSessionId: input.paymentSessionId,
+    status: "Payment session created",
+    amount: input.amount,
+    currency: input.currency,
+    market: input.market,
+    method: "Checkout.com Flow",
+    customerEmail: input.customerEmail,
+    customerName: input.customerName,
+    events: [
+      {
+        id: `${input.reference}-flow-session-created`,
+        type: "flow_session_created",
+        label: "Flow payment session created",
+        createdAt: now,
+        amount: input.amount,
+        currency: input.currency,
+      },
+    ],
+    expiresAt: Date.now() + 1000 * 60 * 60,
+  };
+
+  return saveOrder(order);
+}
+
+export async function linkAndRefreshOwnedPayment(
+  reference: string,
+  paymentId: string,
+) {
+  const order = await getOrderByReference(reference);
+
+  if (!order) {
+    return undefined;
+  }
+
+  await linkPaymentToOrder(reference, paymentId);
+
+  if (!order.events.some((event) => event.type === "flow_payment_completed")) {
+    order.events.push({
+      id: `${reference}-flow-payment-completed`,
+      type: "flow_payment_completed",
+      label: "Flow payment completed",
+      createdAt: new Date().toISOString(),
+      paymentId,
+      amount: order.amount,
+      currency: order.currency,
+    });
+  }
+
+  return refreshOwnedPaymentStatus(paymentId);
+}
+
 export async function refreshOwnedPaymentStatus(paymentId: string) {
   const order = await getOrderByPaymentId(paymentId);
 
@@ -153,9 +219,15 @@ export async function refreshOwnedPaymentStatus(paymentId: string) {
     approved: payment.approved,
     responseCode: payment.response_code,
     responseSummary: payment.response_summary,
+    cardSummary:
+      cardSummaryFromPayment(payment) ?? order.payment?.cardSummary,
     availableToRefund: payment.balances?.available_to_refund,
     totalRefunded: payment.balances?.total_refunded,
   });
+
+  if (order.customerEmail && payment.customer?.id) {
+    await saveFlowCustomerIdForEmail(order.customerEmail, payment.customer.id);
+  }
 
   return {
     ...safePaymentPayload(payment),
@@ -164,7 +236,7 @@ export async function refreshOwnedPaymentStatus(paymentId: string) {
     totalRefunded: payment.balances?.total_refunded ?? 0,
     orderReference: order.reference,
     events: order.events,
-    cardSummary: order.payment?.cardSummary,
+    cardSummary: cardSummaryFromPayment(payment) ?? order.payment?.cardSummary,
     method: order.method,
   };
 }

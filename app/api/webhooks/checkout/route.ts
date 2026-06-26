@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import {
   findOrderForWebhook,
+  linkPaymentToOrder,
   markWebhookEventSeen,
   type OrderEvent,
 } from "@/lib/session-store";
@@ -23,6 +24,10 @@ type CheckoutWebhook = {
     balances?: {
       available_to_refund?: number;
       total_refunded?: number;
+    };
+    metadata?: {
+      cko_payment_session_id?: string;
+      reference?: string;
     };
   };
   is_test?: boolean;
@@ -119,9 +124,18 @@ export async function POST(request: Request) {
   }
 
   const paymentId = event.data?.payment_id ?? event.data?.id;
-  const order = findOrderForWebhook(paymentId, event.data?.reference);
+  const reference = event.data?.reference ?? event.data?.metadata?.reference;
+  const order = findOrderForWebhook(
+    paymentId,
+    reference,
+    event.data?.metadata?.cko_payment_session_id,
+  );
 
   if (order) {
+    if (paymentId && !order.paymentId) {
+      await linkPaymentToOrder(order.reference, paymentId);
+    }
+
     const status = statusFromEvent(event.type);
     const orderEvent: OrderEvent = {
       id: event.id,

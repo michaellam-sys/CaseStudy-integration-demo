@@ -123,7 +123,7 @@ function goToPaymentComplete(data: {
   window.location.href = `/payment-complete?${params.toString()}`;
 }
 
-export function CheckoutV1Client() {
+export function CheckoutClient() {
   const searchParams = useSearchParams();
   const market = getMarket(searchParams.get("market"));
   const { items } = useBasket();
@@ -580,7 +580,9 @@ export function CheckoutV1Client() {
                   Open link
                 </a>
                 <button
-                  onClick={() => navigator.clipboard.writeText(result.url ?? "")}
+                  onClick={() =>
+                    navigator.clipboard.writeText(result.url ?? "")
+                  }
                   className="h-10 rounded-md border border-[#323416]/20 px-4 text-sm font-semibold text-[#323416]"
                 >
                   Copy link

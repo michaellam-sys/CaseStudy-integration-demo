@@ -54,7 +54,7 @@ async function main() {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      name: `Case & Co. Checkout v2 ${new Date().toISOString()}`,
+      name: `Case & Co. Checkout Flow ${new Date().toISOString()}`,
       active: true,
       conditions,
       actions: [

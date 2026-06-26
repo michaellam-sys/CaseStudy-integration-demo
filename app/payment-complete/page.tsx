@@ -190,7 +190,7 @@ export default async function PaymentCompletePage({
             Continue shopping
           </Link>
           <Link
-            href="/checkout-v2"
+            href="/checkout-flow"
             className="inline-flex h-11 items-center rounded-md border border-[#323416]/20 px-4 text-sm font-semibold text-[#323416]"
           >
             Back to checkout

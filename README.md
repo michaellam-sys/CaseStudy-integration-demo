@@ -1,39 +1,45 @@
 # Case & Co. Checkout.com Demo
 
-Compact Next.js + TypeScript demo for an iPhone-case merchant comparing Checkout.com payment integration patterns.
+Compact Next.js + TypeScript demo for an iPhone-case merchant using Checkout.com.
 
 ## Routes
 
-- `/checkout-v1` preserves the Part 2 checkout flow.
-- `/checkout-v2` contains the Part 3 enhancements.
-- `/checkout` redirects to `/checkout-v2`.
-- `/payment/3ds/return` verifies tokenized 3DS returns against the current demo session before showing a result.
+- `/checkout` preserves the Part 2 comparison checkout.
+- `/checkout-flow` is the Part 3 customer-facing Checkout.com Flow checkout.
+- `/payment/flow/return` verifies Flow redirect/3DS returns against the current demo session before showing a result.
 
-## Part 2 preserved in v1
+## Part 2 preserved in checkout
 
-Checkout v1 still demonstrates:
+Checkout still demonstrates:
 
 - Payment Links
 - Hosted Payments Page
 - Direct card payment through the Payments API
 - Saved card payment using a server-held instrument ID
 
-The v1 checkout calls versioned API routes under `/api/checkout-v1` and `/api/payments-v1` so future v2 changes do not break the Part 2 demo.
+The checkout calls versioned API routes under `/api/checkout-v1` and `/api/payments-v1` so Part 3 Flow changes do not break the Part 2 demo.
 
-## Part 3 enhancements in v2
+## Part 3 Flow checkout
 
-Checkout v2 adds:
+Checkout Flow uses Checkout.com Flow as the default customer-facing payment path:
 
-- Customer name, cardholder name, email, and billing country collection.
+- Server-created Checkout.com Payment Sessions.
+- Merchant-collected customer email for Flow stored-card support.
+- Flow-hosted cardholder and payment-detail collection.
 - Merchant UI localization for English, Traditional Chinese, and Dutch.
+- Flow locale mapping for English, Chinese Hong Kong, and Dutch.
 - HKD, EUR, and USD market/currency support with server-side amount calculation.
-- Tokenized card payment with `3ds.enabled: true`.
+- Flow cardholder-name display, mandatory CVV, 3DS, and redirect handling.
 - Safe server-side payment status lookup.
+- Safe card display from payment details, such as card scheme and last four digits.
 - Session-scoped order activity state.
 - Checkout.com webhook receiver with Authorization and raw-body `Cko-Signature` verification.
 - Partial and full refund requests for captured, current-session payments.
+- Flow saved-card consent and returning stored-card display for the current demo session.
 
-Checkout.com Flow and native Apple Pay are intentionally out of scope.
+Flow saved-card support uses `customer.email` plus `payment_method_configuration.card.store_payment_details: "collect_consent"` when creating the Payment Session. After a successful payment, the demo stores the returned Checkout.com `customer.id` in memory for the current session and sends it as `payment_method_configuration.stored_card.customer_id` on later Flow sessions for the same email.
+
+Native Apple Pay is not implemented directly. Flow is the recommended future path for Apple Pay once the merchant completes Checkout.com and Apple domain onboarding with a valid HTTPS domain, eligible key scopes, and Apple Pay enrollment.
 
 ## Environment
 
@@ -53,6 +59,8 @@ CHECKOUT_WEBHOOK_SIGNATURE_KEY=replace_me
 CHECKOUT_WEBHOOK_WORKFLOW_ID=
 ```
 
+Flow must be enabled for the Checkout.com sandbox account. The public key needs payment-session payment/tokenization scopes, and the secret key needs payment-session and payment-management scopes for session creation, status lookup, webhooks, and refunds.
+
 Legacy Part 2 names are still supported: `CKO_SK`, `NEXT_PUBLIC_CKO_PK`, `PROCESSING_CHANNEL_ID`, `NEXT_PUBLIC_PROCESSING_CHANNEL_ID`, and `BASE_CHECKOUT_URL`.
 
 ## Run
@@ -67,16 +75,18 @@ Useful routes:
 
 - `/` product catalog loaded through `/api/products`
 - `/basket` demo shopping cart
-- `/profile` card tokenization and saved-card onboarding
-- `/checkout-v1` preserved Part 2 checkout
-- `/checkout-v2` Part 3 checkout
+- `/profile` Part 2 card tokenization and saved-card onboarding
+- `/checkout` preserved Part 2 checkout
+- `/checkout-flow` Part 3 Flow checkout
 - `/payment-complete` safe receipt/status/refund screen
 
-## 3DS behavior
+## Flow and 3DS behavior
 
-The v2 tokenized-card mode sends card details directly from the browser to Checkout.com `/tokens` with the public key. The app server receives only the `tok_...` token, then creates a payment with `source.type = "token"` and `3ds.enabled = true`.
+Checkout Flow collects customer email before creating a Payment Session through `/api/flow/payment-session`. The browser receives the complete unmodified Payment Session response plus the public key, then mounts Checkout.com Flow. Cardholder details, raw PAN, and CVV stay inside Checkout.com-controlled Flow fields.
 
-If Checkout.com returns a redirect URL, the browser follows it. The return URL is not treated as proof of success; `/payment/3ds/return` verifies the session-owned pending payment server-side.
+For synchronous payments, `onPaymentCompleted` links the returned payment ID to the current demo order and confirms status server-side. For redirect or 3DS flows, `/payment/flow/return` treats `cko-payment-id` as a candidate only and verifies payment status server-side before showing a result.
+
+When Checkout.com returns safe source details from the payment lookup, the receipt/status UI displays only the card scheme and last four digits.
 
 ## Webhooks
 
@@ -102,11 +112,12 @@ Refund UI appears on the receipt/status panel only when the server confirms a se
 ## Security and demo limits
 
 - `CHECKOUT_SECRET_KEY`/`CKO_SK` stay server-only.
-- Direct-card mode intentionally sends full card details through the Next.js server and is only a low-level Payments API demonstration for appropriately scoped merchants.
-- Tokenized 3DS mode keeps PAN/CVV browser-to-Checkout.com.
-- The app does not log or persist PAN, CVV, expiry, secret keys, or raw webhook payloads.
+- Flow keeps card data out of the application server for the customer-facing checkout.
+- Flow stored-card customer IDs stay server-side in memory and expire with the demo session.
+- Direct-card mode remains only in the preserved `/checkout` technical demo.
+- The app does not log or persist PAN, CVV, expiry, secret keys, Flow session data, or raw webhook payloads.
 - Demo state is in memory and is cleared when the server restarts or the session expires.
-- There is no database, auth system, inventory platform, email provider, Checkout.com Flow integration, or Apple Pay integration.
+- There is no database, auth system, inventory platform, email provider, or native Apple Pay implementation.
 
 ## Verification
 

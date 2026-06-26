@@ -30,7 +30,7 @@ export function ProfileClient() {
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
   const [state, setState] = useState<ApiState>({ status: "idle" });
   const checkoutHref = useMemo(
-    () => `/checkout-v2?market=${market.code}&mode=saved-card`,
+    () => `/checkout?market=${market.code}`,
     [market.code],
   );
 

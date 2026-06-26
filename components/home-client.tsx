@@ -30,12 +30,11 @@ export function HomeClient() {
             Checkout.com integration demo
           </p>
           <h1 className="mt-3 max-w-xl text-5xl font-semibold leading-tight text-[#323416]">
-            iPhone cases with four payment integration paths.
+            iPhone cases with Checkout.com Flow.
           </h1>
           <p className="mt-4 max-w-lg text-lg leading-8 text-[#323416]/70">
-            A hard-coded storefront built for comparing Checkout.com Payment
-            Links, Hosted Payments Page, direct card payments, and saved-card
-            payments.
+            A hard-coded storefront built around a customer-facing Flow checkout,
+            with the original Part 2 integration demos preserved separately.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -46,6 +45,7 @@ export function HomeClient() {
           >
             <option value="HK">Hong Kong / HKD</option>
             <option value="NL">Netherlands / EUR</option>
+            <option value="US">International test mode / USD</option>
           </select>
           <Link
             href={basketHref}
