@@ -11,6 +11,11 @@ import {
   createPaymentsV1ReturnUrl,
   createStoredOrder,
 } from "@/lib/checkout-payments";
+import {
+  CustomerPhoneInputError,
+  normalizeCustomerPhone,
+  toCheckoutCustomerPhone,
+} from "@/lib/customer-phone";
 import { getSavedCard } from "@/lib/session-store";
 
 export const runtime = "nodejs";
@@ -42,6 +47,7 @@ export async function POST(request: Request) {
 
     const market = getMarket(body.market);
     const requestBasket = normalizeBasket(body.basket);
+    const phone = normalizeCustomerPhone(body.phone);
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
     const reference = createReference("saved");
@@ -73,6 +79,7 @@ export async function POST(request: Request) {
         customer: {
           id: savedCard.customerId,
           email: savedCard.email,
+          phone: toCheckoutCustomerPhone(phone),
         },
         ...(require3ds
           ? {
@@ -120,6 +127,10 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof CustomerPhoneInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     return NextResponse.json(safeCheckoutError(error), { status: 500 });
   }
 }

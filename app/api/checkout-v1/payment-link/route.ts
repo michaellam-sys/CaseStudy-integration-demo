@@ -12,6 +12,11 @@ import {
   getMarket,
   normalizeBasket,
 } from "@/lib/catalog";
+import {
+  CustomerPhoneInputError,
+  normalizeCustomerPhone,
+  toCheckoutCustomerPhone,
+} from "@/lib/customer-phone";
 
 export const runtime = "nodejs";
 
@@ -49,6 +54,7 @@ export async function POST(request: Request) {
     const market = getMarket(body.market);
     const requestBasket = normalizeBasket(body.basket);
     const email = String(body.email ?? "").trim();
+    const phone = normalizeCustomerPhone(body.phone);
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
     const paymentLink = await checkoutRequest<PaymentLinkResponse>(
@@ -65,7 +71,10 @@ export async function POST(request: Request) {
               country: market.country,
             },
           },
-          customer: email ? { email } : undefined,
+          customer: {
+            ...(email ? { email } : {}),
+            phone: toCheckoutCustomerPhone(phone),
+          },
           products: checkoutProducts(market.code, requestBasket),
           expires_in: 86400,
           capture: true,
@@ -76,6 +85,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(paymentLinkPayload(paymentLink));
   } catch (error) {
+    if (error instanceof CustomerPhoneInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     return NextResponse.json(safeCheckoutError(error), { status: 500 });
   }
 }

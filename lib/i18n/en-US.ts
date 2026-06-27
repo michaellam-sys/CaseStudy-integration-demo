@@ -30,6 +30,9 @@ export const enUS = {
   customerEmailHelp:
     "Used to enable Checkout.com Flow saved-card consent and future stored-card display in this demo session.",
   emailInvalid: "Enter a valid email address.",
+  phoneCountryCode: "Country code",
+  phoneNumber: "Phone number",
+  phoneInvalid: "Enter a valid phone number.",
   startFlowPayment: "Start secure payment",
   flowPlaceholder: "Start secure payment to load the available Flow methods.",
   flowReady: "Flow is ready",

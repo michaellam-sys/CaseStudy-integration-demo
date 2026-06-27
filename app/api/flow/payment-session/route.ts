@@ -17,6 +17,11 @@ import {
   type MarketCode,
 } from "@/lib/catalog";
 import { createPendingFlowOrder } from "@/lib/checkout-payments";
+import {
+  CustomerPhoneInputError,
+  normalizeCustomerPhone,
+  toCheckoutCustomerPhone,
+} from "@/lib/customer-phone";
 import { getFlowCustomerIdByEmail } from "@/lib/session-store";
 
 export const runtime = "nodejs";
@@ -50,9 +55,9 @@ function normalizeFlowCustomer(value: unknown) {
   const data = typeof value === "object" && value ? value : {};
   const keys = Object.keys(data);
 
-  if (keys.some((key) => key !== "email")) {
+  if (keys.some((key) => key !== "email" && key !== "phone")) {
     throw new FlowInputError(
-      "Only customer.email is accepted for Flow sessions.",
+      "Only customer.email and customer.phone are accepted for Flow sessions.",
     );
   }
 
@@ -62,7 +67,20 @@ function normalizeFlowCustomer(value: unknown) {
     throw new FlowInputError("A valid customer email is required.");
   }
 
-  return { email };
+  try {
+    return {
+      email,
+      phone: normalizeCustomerPhone(
+        (data as Record<string, unknown>).phone,
+      ),
+    };
+  } catch (error) {
+    if (error instanceof CustomerPhoneInputError) {
+      throw new FlowInputError(error.message);
+    }
+
+    throw error;
+  }
 }
 
 export async function POST(request: Request) {
@@ -124,6 +142,7 @@ export async function POST(request: Request) {
           },
           customer: {
             email: customer.email,
+            phone: toCheckoutCustomerPhone(customer.phone),
           },
           success_url: `${returnUrl}&result=success`,
           failure_url: `${returnUrl}&result=failure`,

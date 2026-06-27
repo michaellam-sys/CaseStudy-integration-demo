@@ -31,6 +31,9 @@ export const nlNL: typeof enUS = {
   customerEmailHelp:
     "Wordt gebruikt om opgeslagen-kaarttoestemming in Checkout.com Flow en toekomstige opgeslagen kaarten in deze demosessie mogelijk te maken.",
   emailInvalid: "Voer een geldig e-mailadres in.",
+  phoneCountryCode: "Landcode",
+  phoneNumber: "Telefoonnummer",
+  phoneInvalid: "Voer een geldig telefoonnummer in.",
   startFlowPayment: "Veilige betaling starten",
   flowPlaceholder: "Start de veilige betaling om beschikbare Flow-methoden te laden.",
   flowReady: "Flow is klaar",

@@ -11,6 +11,11 @@ import {
   createPaymentsV1ReturnUrl,
   createStoredOrder,
 } from "@/lib/checkout-payments";
+import {
+  CustomerPhoneInputError,
+  normalizeCustomerPhone,
+  toCheckoutCustomerPhone,
+} from "@/lib/customer-phone";
 
 export const runtime = "nodejs";
 
@@ -39,6 +44,7 @@ export async function POST(request: Request) {
     const cardNumber = String(body.cardNumber ?? "").replace(/\s/g, "");
     const cardholderName = String(body.cardholderName ?? "").trim();
     const email = String(body.email ?? "").trim();
+    const phone = normalizeCustomerPhone(body.phone);
     const paymentMethod = "Direct credit card";
     const cardSummary = `Card ending ${cardNumber.slice(-4)}`;
     const require3ds = body.require3ds === true;
@@ -70,6 +76,7 @@ export async function POST(request: Request) {
         capture: true,
         customer: {
           email,
+          phone: toCheckoutCustomerPhone(phone),
         },
         ...(require3ds
           ? {
@@ -118,6 +125,10 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof CustomerPhoneInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     return NextResponse.json(safeCheckoutError(error), { status: 500 });
   }
 }

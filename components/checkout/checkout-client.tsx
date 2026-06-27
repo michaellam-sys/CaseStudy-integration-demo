@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { calculateBasket, formatMoney, getMarket } from "@/lib/catalog";
+import { defaultCustomerPhone } from "@/lib/customer-phone";
+import { CustomerPhoneInput } from "@/components/customer-phone-input";
 import { markBasketForClearing, useBasket } from "@/components/use-basket";
 
 type Mode = "payment-link" | "hpp" | "direct-card" | "saved-card";
@@ -135,10 +137,20 @@ export function CheckoutClient() {
     searchParams.get("mode") === "saved-card" ? "saved-card" : "payment-link";
   const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState("demo.customer@example.com");
+  const [phoneCountryCode, setPhoneCountryCode] = useState(
+    defaultCustomerPhone(market.country).countryCode,
+  );
+  const [phoneNumber, setPhoneNumber] = useState(
+    defaultCustomerPhone(market.country).number,
+  );
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
   const [require3ds, setRequire3ds] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const customerPhone = {
+    countryCode: phoneCountryCode,
+    number: phoneNumber,
+  };
 
   useEffect(() => {
     fetch("/api/profile/saved-card")
@@ -180,6 +192,7 @@ export function CheckoutClient() {
     const data = await postJson("/api/checkout-v1/payment-link", {
       market: market.code,
       email,
+      phone: customerPhone,
       basket: items,
     });
 
@@ -273,6 +286,7 @@ export function CheckoutClient() {
     const data = await postJson("/api/checkout-v1/hpp", {
       market: market.code,
       email,
+      phone: customerPhone,
       basket: items,
     });
 
@@ -328,6 +342,7 @@ export function CheckoutClient() {
       market: market.code,
       basket: items,
       email,
+      phone: customerPhone,
       cardholderName: String(formData.get("cardholderName") ?? "").trim(),
       cardNumber,
       expiryMonth,
@@ -362,6 +377,7 @@ export function CheckoutClient() {
     const data = await postJson("/api/payments-v1/saved-card", {
       market: market.code,
       basket: items,
+      phone: customerPhone,
       require3ds,
     });
 
@@ -430,6 +446,14 @@ export function CheckoutClient() {
               className="h-11 rounded-md border border-[#323416]/20 px-3"
             />
           </label>
+          <div className="mt-4">
+            <CustomerPhoneInput
+              countryCode={phoneCountryCode}
+              phoneNumber={phoneNumber}
+              onCountryCodeChange={setPhoneCountryCode}
+              onPhoneNumberChange={setPhoneNumber}
+            />
+          </div>
 
           {mode === "payment-link" && (
             <div className="mt-5">

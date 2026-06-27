@@ -12,6 +12,11 @@ import {
   getMarket,
   normalizeBasket,
 } from "@/lib/catalog";
+import {
+  CustomerPhoneInputError,
+  normalizeCustomerPhone,
+  toCheckoutCustomerPhone,
+} from "@/lib/customer-phone";
 
 export const runtime = "nodejs";
 
@@ -55,6 +60,7 @@ export async function POST(request: Request) {
     const market = getMarket(body.market);
     const requestBasket = normalizeBasket(body.basket);
     const email = String(body.email ?? "").trim();
+    const phone = normalizeCustomerPhone(body.phone);
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
     const origin = new URL(request.url).origin;
@@ -79,7 +85,10 @@ export async function POST(request: Request) {
               country: market.country,
             },
           },
-          customer: email ? { email } : undefined,
+          customer: {
+            ...(email ? { email } : {}),
+            phone: toCheckoutCustomerPhone(phone),
+          },
           success_url: createHostedReturnUrl({
             ...commonReturnParams,
             status: "success",
@@ -103,6 +112,10 @@ export async function POST(request: Request) {
       redirectUrl: hpp._links?.redirect?.href,
     });
   } catch (error) {
+    if (error instanceof CustomerPhoneInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     return NextResponse.json(safeCheckoutError(error), { status: 500 });
   }
 }

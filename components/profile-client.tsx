@@ -36,6 +36,10 @@ type TokenizationSessionResponse = {
   publicKey: string;
 };
 
+type TokenizationSessionState = TokenizationSessionResponse & {
+  email: string;
+};
+
 async function readError(response: Response) {
   const data = await response.json().catch(() => ({}));
   return data.error ?? data.errorCodes?.[0] ?? "Request failed.";
@@ -79,39 +83,22 @@ function WebComponentsCardTokenizer({
   onStateChange: (state: ApiState) => void;
 }) {
   const [email, setEmail] = useState("demo.customer@example.com");
+  const [tokenizationSession, setTokenizationSession] =
+    useState<TokenizationSessionState | null>(null);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const cardContainerRef = useRef<HTMLDivElement | null>(null);
   const cardComponentRef = useRef<Component | null>(null);
+  const latestEmailRef = useRef(email);
 
   useEffect(() => {
-    const normalizedEmail = email.trim();
-
-    if (!validateEmail(normalizedEmail)) {
-      cardComponentRef.current?.unmount();
-      cardComponentRef.current = null;
-      queueMicrotask(() => setIsReady(false));
-      return;
-    }
-
-    const publicKey = getClientPublicKey();
-
-    if (!publicKey) {
-      onStateChange({
-        status: "error",
-        message:
-          "Missing NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY or NEXT_PUBLIC_CKO_PK in .env.local.",
-      });
-      return;
-    }
-
-    const checkoutPublicKey = publicKey;
-
-    if (!cardContainerRef.current) {
+    if (!tokenizationSession || !cardContainerRef.current) {
       return;
     }
 
     let isMounted = true;
     const cardContainer = cardContainerRef.current;
+    const activeSession = tokenizationSession;
 
     async function mountCardComponent() {
       setIsReady(false);
@@ -119,36 +106,14 @@ function WebComponentsCardTokenizer({
       cardComponentRef.current = null;
 
       try {
-        const sessionResponse = await fetch(
-          "/api/profile/tokenization-session",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              market: market.code,
-              customer: {
-                email: normalizedEmail,
-              },
-            }),
-          },
-        );
-
-        if (!sessionResponse.ok) {
-          throw new Error(await readError(sessionResponse));
-        }
-
-        const sessionData =
-          (await sessionResponse.json()) as TokenizationSessionResponse;
         const checkout = await loadCheckoutWebComponents({
-          paymentSession: sessionData.paymentSession,
-          publicKey: sessionData.publicKey || checkoutPublicKey,
+          paymentSession: activeSession.paymentSession,
+          publicKey: activeSession.publicKey,
           environment: "sandbox",
           appearance: flowAppearance,
           componentOptions: {
             data: {
-              email: normalizedEmail,
+              email: activeSession.email,
               billingCountry: market.country,
             },
           },
@@ -158,7 +123,7 @@ function WebComponentsCardTokenizer({
           displayCvv: "mandatory",
           showPayButton: false,
           data: {
-            email: normalizedEmail,
+            email: activeSession.email,
           },
         });
         const isAvailable = await card.isAvailable();
@@ -200,16 +165,30 @@ function WebComponentsCardTokenizer({
       cardComponentRef.current = null;
       setIsReady(false);
     };
-  }, [email, market.code, market.country, onStateChange]);
+  }, [market.country, onStateChange, tokenizationSession]);
 
-  async function handleSaveWithWebComponents(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
+  function clearTokenizationSession() {
+    cardComponentRef.current?.unmount();
+    cardComponentRef.current = null;
+    setTokenizationSession(null);
+    setIsReady(false);
+  }
 
+  function handleEmailChange(nextEmail: string) {
+    latestEmailRef.current = nextEmail;
+    setEmail(nextEmail);
+
+    if (tokenizationSession) {
+      clearTokenizationSession();
+      onStateChange({ status: "idle" });
+    }
+  }
+
+  async function handleStartVerification() {
     const normalizedEmail = email.trim();
 
     if (!validateEmail(normalizedEmail)) {
+      clearTokenizationSession();
       onStateChange({
         status: "error",
         message: "Enter a valid customer email.",
@@ -217,12 +196,79 @@ function WebComponentsCardTokenizer({
       return;
     }
 
-    const card = cardComponentRef.current;
+    const publicKey = getClientPublicKey();
 
-    if (!card || !isReady) {
+    if (!publicKey) {
+      clearTokenizationSession();
       onStateChange({
         status: "error",
-        message: "Checkout.com card tokenization is still loading.",
+        message:
+          "Missing NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY or NEXT_PUBLIC_CKO_PK in .env.local.",
+      });
+      return;
+    }
+
+    setIsCreatingSession(true);
+    clearTokenizationSession();
+    onStateChange({ status: "loading" });
+
+    try {
+      const sessionResponse = await fetch("/api/profile/tokenization-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          market: market.code,
+          customer: {
+            email: normalizedEmail,
+          },
+        }),
+      });
+
+      if (!sessionResponse.ok) {
+        throw new Error(await readError(sessionResponse));
+      }
+
+      const sessionData =
+        (await sessionResponse.json()) as TokenizationSessionResponse;
+
+      if (latestEmailRef.current.trim() !== normalizedEmail) {
+        onStateChange({ status: "idle" });
+        return;
+      }
+
+      setTokenizationSession({
+        paymentSession: sessionData.paymentSession,
+        publicKey: sessionData.publicKey || publicKey,
+        email: normalizedEmail,
+      });
+      onStateChange({ status: "idle" });
+    } catch (error) {
+      onStateChange({
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to create Checkout.com card verification session.",
+      });
+    } finally {
+      setIsCreatingSession(false);
+    }
+  }
+
+  async function handleSaveWithWebComponents(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const card = cardComponentRef.current;
+    const activeSession = tokenizationSession;
+
+    if (!card || !isReady || !activeSession) {
+      onStateChange({
+        status: "error",
+        message: "Start card verification before saving.",
       });
       return;
     }
@@ -241,7 +287,7 @@ function WebComponentsCardTokenizer({
       const token = readCardToken(await card.tokenize());
       await onSaveToken(
         token,
-        normalizedEmail,
+        activeSession.email,
         "Saved card instrument created from Checkout Web Components tokenization.",
       );
     } catch (error) {
@@ -264,25 +310,50 @@ function WebComponentsCardTokenizer({
           type="email"
           required
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => handleEmailChange(event.target.value)}
           className="h-11 rounded-md border border-[#323416]/20 px-3"
         />
       </label>
+      <button
+        type="button"
+        onClick={handleStartVerification}
+        disabled={isSaving || isCreatingSession}
+        className="h-11 rounded-md border border-[#323416]/20 px-4 text-sm font-semibold text-[#323416] disabled:opacity-60"
+      >
+        {isCreatingSession
+          ? "Starting verification..."
+          : "Start card verification"}
+      </button>
       <div
         ref={cardContainerRef}
         className="min-h-[260px] rounded-md border border-[#323416]/10 bg-[#FFFFFD] p-4"
       >
-        {!isReady && (
+        {!tokenizationSession && !isCreatingSession && (
+          <p className="text-sm text-[#323416]/65">
+            Enter an email and start card verification to load Checkout.com card
+            fields.
+          </p>
+        )}
+        {isCreatingSession && (
+          <p className="text-sm text-[#323416]/65">
+            Creating Checkout.com card verification session...
+          </p>
+        )}
+        {tokenizationSession && !isReady && (
           <p className="text-sm text-[#323416]/65">
             Loading Checkout.com card tokenization...
           </p>
         )}
       </div>
       <button
-        disabled={isSaving || !isReady}
+        disabled={isSaving || isCreatingSession || !isReady}
         className="h-11 rounded-md bg-[#323416] px-4 text-sm font-semibold text-white disabled:opacity-60"
       >
-        {isSaving ? "Saving..." : "Tokenize with Web Components and save"}
+        {isCreatingSession
+          ? "Starting verification..."
+          : isSaving
+            ? "Saving..."
+            : "Tokenize with Web Components and save"}
       </button>
     </form>
   );
@@ -470,6 +541,7 @@ export function ProfileClient() {
 
         {tokenizationMode === "web-components" ? (
           <WebComponentsCardTokenizer
+            key={market.code}
             isSaving={state.status === "loading"}
             market={market}
             onSaveToken={saveTokenizedCard}

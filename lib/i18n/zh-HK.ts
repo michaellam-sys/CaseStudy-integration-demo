@@ -30,6 +30,9 @@ export const zhHK: typeof enUS = {
   customerEmailHelp:
     "用於啟用 Checkout.com Flow 儲存信用卡同意選項，並在此示範工作階段顯示日後可用的已儲存信用卡。",
   emailInvalid: "請輸入有效的電郵地址。",
+  phoneCountryCode: "國家/地區代碼",
+  phoneNumber: "電話號碼",
+  phoneInvalid: "請輸入有效的電話號碼。",
   startFlowPayment: "開始安全付款",
   flowPlaceholder: "開始安全付款以載入可用的 Flow 付款方式。",
   flowReady: "Flow 已準備好",

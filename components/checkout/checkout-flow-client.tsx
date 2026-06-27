@@ -14,9 +14,16 @@ import {
   markets,
   type LocaleCode,
 } from "@/lib/catalog";
+import {
+  defaultCustomerPhone,
+  normalizeCustomerPhone,
+  toCheckoutComponentPhoneData,
+  type CustomerPhone,
+} from "@/lib/customer-phone";
 import { flowAppearance } from "@/lib/flow/appearance";
 import { flowTranslations } from "@/lib/flow/translations";
 import { getLocale, getMessages, languageOptions } from "@/lib/i18n";
+import { CustomerPhoneInput } from "@/components/customer-phone-input";
 import { markBasketForClearing, useBasket } from "@/components/use-basket";
 
 type FlowSessionState = {
@@ -26,6 +33,8 @@ type FlowSessionState = {
   amount: number;
   currency: string;
   locale: string;
+  customerEmail: string;
+  customerPhone: CustomerPhone;
 };
 
 type Result = {
@@ -82,6 +91,12 @@ export function CheckoutFlowClient() {
   const [customerEmail, setCustomerEmail] = useState(
     "demo.customer@example.com",
   );
+  const [phoneCountryCode, setPhoneCountryCode] = useState(
+    defaultCustomerPhone(market.country).countryCode,
+  );
+  const [phoneNumber, setPhoneNumber] = useState(
+    defaultCustomerPhone(market.country).number,
+  );
   const [flowSession, setFlowSession] = useState<FlowSessionState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
@@ -100,7 +115,7 @@ export function CheckoutFlowClient() {
       setFlowSession(null);
       setResult(null);
     });
-  }, [items, market.code, locale, customerEmail]);
+  }, [items, market.code, locale, customerEmail, phoneCountryCode, phoneNumber]);
 
   useEffect(() => {
     if (!flowSession || !flowContainerRef.current) {
@@ -110,6 +125,9 @@ export function CheckoutFlowClient() {
     let isMounted = true;
     const activeFlowSession = flowSession;
     const flowContainer = flowContainerRef.current;
+    const phoneData = toCheckoutComponentPhoneData(
+      activeFlowSession.customerPhone,
+    );
 
     async function mountFlow() {
       flowComponentRef.current?.unmount();
@@ -125,14 +143,22 @@ export function CheckoutFlowClient() {
           translations: flowTranslations,
           componentOptions: {
             data: {
-              email: customerEmail.trim(),
+              email: activeFlowSession.customerEmail,
+              ...phoneData,
               billingCountry: market.country,
             },
             card: {
               displayCardholderName: "top",
               displayCvv: "mandatory",
               data: {
-                email: customerEmail.trim(),
+                email: activeFlowSession.customerEmail,
+                ...phoneData,
+              },
+            },
+            remember_me: {
+              data: {
+                email: activeFlowSession.customerEmail,
+                ...phoneData,
               },
             },
           },
@@ -218,7 +244,7 @@ export function CheckoutFlowClient() {
       flowComponentRef.current?.unmount();
       flowComponentRef.current = null;
     };
-  }, [copy, customerEmail, flowSession, market.country]);
+  }, [copy, flowSession, market.country]);
 
   async function createFlowSession() {
     if (!basket) {
@@ -226,12 +252,27 @@ export function CheckoutFlowClient() {
     }
 
     const normalizedEmail = customerEmail.trim();
+    let normalizedPhone: CustomerPhone;
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setResult({
         tone: "error",
         title: copy.validationFailed,
         detail: copy.emailInvalid,
+      });
+      return;
+    }
+
+    try {
+      normalizedPhone = normalizeCustomerPhone({
+        countryCode: phoneCountryCode,
+        number: phoneNumber,
+      });
+    } catch {
+      setResult({
+        tone: "error",
+        title: copy.validationFailed,
+        detail: copy.phoneInvalid,
       });
       return;
     }
@@ -252,6 +293,7 @@ export function CheckoutFlowClient() {
           locale,
           customer: {
             email: normalizedEmail,
+            phone: normalizedPhone,
           },
         }),
       });
@@ -268,6 +310,8 @@ export function CheckoutFlowClient() {
         amount: data.amount,
         currency: data.currency,
         locale: data.locale,
+        customerEmail: normalizedEmail,
+        customerPhone: normalizedPhone,
       });
       setResult({
         tone: "info",
@@ -350,6 +394,16 @@ export function CheckoutFlowClient() {
           <p className="mt-2 text-sm leading-6 text-[#323416]/65">
             {copy.customerEmailHelp}
           </p>
+          <div className="mt-4">
+            <CustomerPhoneInput
+              countryCode={phoneCountryCode}
+              phoneNumber={phoneNumber}
+              onCountryCodeChange={setPhoneCountryCode}
+              onPhoneNumberChange={setPhoneNumber}
+              countryCodeLabel={copy.phoneCountryCode}
+              phoneNumberLabel={copy.phoneNumber}
+            />
+          </div>
         </div>
 
         <div className="mt-6 rounded-lg border border-[#323416]/10 bg-white p-5">
