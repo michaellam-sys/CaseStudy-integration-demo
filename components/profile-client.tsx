@@ -16,7 +16,7 @@ import { flowAppearance } from "@/lib/flow/appearance";
 type Market = ReturnType<typeof getMarket>;
 
 type SavedCard = {
-  email: string;
+  email?: string;
   scheme?: string;
   last4?: string;
   expiryMonth?: number;
@@ -36,9 +36,12 @@ type TokenizationSessionResponse = {
   publicKey: string;
 };
 
-type TokenizationSessionState = TokenizationSessionResponse & {
-  email: string;
-};
+type TokenizationSessionState = TokenizationSessionResponse;
+
+const tokenizationModes: { id: TokenizationMode; label: string }[] = [
+  { id: "web-components", label: "Flow component" },
+  { id: "direct-api", label: "Direct Tokens API" },
+];
 
 async function readError(response: Response) {
   const data = await response.json().catch(() => ({}));
@@ -77,19 +80,17 @@ function WebComponentsCardTokenizer({
   market: Market;
   onSaveToken: (
     token: string,
-    email: string,
+    email: string | undefined,
     successMessage: string,
   ) => Promise<void>;
   onStateChange: (state: ApiState) => void;
 }) {
-  const [email, setEmail] = useState("demo.customer@example.com");
   const [tokenizationSession, setTokenizationSession] =
     useState<TokenizationSessionState | null>(null);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const cardContainerRef = useRef<HTMLDivElement | null>(null);
   const cardComponentRef = useRef<Component | null>(null);
-  const latestEmailRef = useRef(email);
 
   useEffect(() => {
     if (!tokenizationSession || !cardContainerRef.current) {
@@ -113,7 +114,6 @@ function WebComponentsCardTokenizer({
           appearance: flowAppearance,
           componentOptions: {
             data: {
-              email: activeSession.email,
               billingCountry: market.country,
             },
           },
@@ -122,9 +122,6 @@ function WebComponentsCardTokenizer({
           displayCardholderName: "top",
           displayCvv: "mandatory",
           showPayButton: false,
-          data: {
-            email: activeSession.email,
-          },
         });
         const isAvailable = await card.isAvailable();
 
@@ -174,28 +171,7 @@ function WebComponentsCardTokenizer({
     setIsReady(false);
   }
 
-  function handleEmailChange(nextEmail: string) {
-    latestEmailRef.current = nextEmail;
-    setEmail(nextEmail);
-
-    if (tokenizationSession) {
-      clearTokenizationSession();
-      onStateChange({ status: "idle" });
-    }
-  }
-
   async function handleStartVerification() {
-    const normalizedEmail = email.trim();
-
-    if (!validateEmail(normalizedEmail)) {
-      clearTokenizationSession();
-      onStateChange({
-        status: "error",
-        message: "Enter a valid customer email.",
-      });
-      return;
-    }
-
     const publicKey = getClientPublicKey();
 
     if (!publicKey) {
@@ -220,9 +196,6 @@ function WebComponentsCardTokenizer({
         },
         body: JSON.stringify({
           market: market.code,
-          customer: {
-            email: normalizedEmail,
-          },
         }),
       });
 
@@ -233,15 +206,9 @@ function WebComponentsCardTokenizer({
       const sessionData =
         (await sessionResponse.json()) as TokenizationSessionResponse;
 
-      if (latestEmailRef.current.trim() !== normalizedEmail) {
-        onStateChange({ status: "idle" });
-        return;
-      }
-
       setTokenizationSession({
         paymentSession: sessionData.paymentSession,
         publicKey: sessionData.publicKey || publicKey,
-        email: normalizedEmail,
       });
       onStateChange({ status: "idle" });
     } catch (error) {
@@ -287,7 +254,7 @@ function WebComponentsCardTokenizer({
       const token = readCardToken(await card.tokenize());
       await onSaveToken(
         token,
-        activeSession.email,
+        undefined,
         "Saved card instrument created from Checkout Web Components tokenization.",
       );
     } catch (error) {
@@ -304,16 +271,6 @@ function WebComponentsCardTokenizer({
       onSubmit={handleSaveWithWebComponents}
       className="mt-5 grid gap-4 rounded-lg border border-[#323416]/10 bg-white p-5"
     >
-      <label className="grid gap-2 text-sm font-medium text-[#323416]">
-        Email
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(event) => handleEmailChange(event.target.value)}
-          className="h-11 rounded-md border border-[#323416]/20 px-3"
-        />
-      </label>
       <button
         type="button"
         onClick={handleStartVerification}
@@ -330,8 +287,7 @@ function WebComponentsCardTokenizer({
       >
         {!tokenizationSession && !isCreatingSession && (
           <p className="text-sm text-[#323416]/65">
-            Enter an email and start card verification to load Checkout.com card
-            fields.
+            Start card verification to load Checkout.com card fields.
           </p>
         )}
         {isCreatingSession && (
@@ -359,6 +315,189 @@ function WebComponentsCardTokenizer({
   );
 }
 
+function TokenizationModeTabs({
+  selectedMode,
+  onSelectMode,
+}: {
+  selectedMode: TokenizationMode;
+  onSelectMode: (mode: TokenizationMode) => void;
+}) {
+  return (
+    <div className="mt-8 rounded-lg border border-[#323416]/10 bg-white p-1">
+      <div className="grid grid-cols-2 gap-1">
+        {tokenizationModes.map((mode) => (
+          <button
+            key={mode.id}
+            type="button"
+            onClick={() => onSelectMode(mode.id)}
+            className={`h-11 rounded-md px-3 text-sm font-semibold ${
+              selectedMode === mode.id
+                ? "bg-[#323416] text-white"
+                : "text-[#323416]"
+            }`}
+          >
+            {mode.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DirectTokensApiForm({
+  isSaving,
+  onSaveCard,
+}: {
+  isSaving: boolean;
+  onSaveCard: (formData: FormData) => void;
+}) {
+  return (
+    <form
+      action={onSaveCard}
+      className="mt-5 grid gap-4 rounded-lg border border-[#323416]/10 bg-white p-5"
+    >
+      <label className="grid gap-2 text-sm font-medium text-[#323416]">
+        Email
+        <input
+          name="email"
+          type="email"
+          required
+          defaultValue="demo.customer@example.com"
+          className="h-11 rounded-md border border-[#323416]/20 px-3"
+        />
+      </label>
+      <label className="grid gap-2 text-sm font-medium text-[#323416]">
+        Cardholder name
+        <input
+          name="cardholderName"
+          required
+          defaultValue="Demo Customer"
+          className="h-11 rounded-md border border-[#323416]/20 px-3"
+        />
+      </label>
+      <label className="grid gap-2 text-sm font-medium text-[#323416]">
+        Card number
+        <input
+          inputMode="numeric"
+          name="cardNumber"
+          required
+          placeholder="Use a Checkout.com sandbox card"
+          className="h-11 rounded-md border border-[#323416]/20 px-3"
+        />
+      </label>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <label className="grid gap-2 text-sm font-medium text-[#323416]">
+          Expiry month
+          <input
+            name="expiryMonth"
+            inputMode="numeric"
+            required
+            placeholder="12"
+            className="h-11 rounded-md border border-[#323416]/20 px-3"
+          />
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-[#323416]">
+          Expiry year
+          <input
+            name="expiryYear"
+            inputMode="numeric"
+            required
+            placeholder="2030"
+            className="h-11 rounded-md border border-[#323416]/20 px-3"
+          />
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-[#323416]">
+          CVV
+          <input
+            name="cvv"
+            inputMode="numeric"
+            required
+            placeholder="100"
+            className="h-11 rounded-md border border-[#323416]/20 px-3"
+          />
+        </label>
+      </div>
+      <button
+        disabled={isSaving}
+        className="h-11 rounded-md bg-[#323416] px-4 text-sm font-semibold text-white disabled:opacity-60"
+      >
+        {isSaving ? "Saving..." : "Tokenize with direct API and save"}
+      </button>
+    </form>
+  );
+}
+
+function StatusMessage({ state }: { state: ApiState }) {
+  if (state.status === "idle") {
+    return null;
+  }
+
+  return (
+    <p
+      className={`mt-4 rounded-md px-4 py-3 text-sm ${
+        state.status === "error"
+          ? "bg-red-50 text-red-700"
+          : "bg-[#8C9E6E]/15 text-[#323416]"
+      }`}
+    >
+      {state.status === "loading" ? "Working..." : state.message}
+    </p>
+  );
+}
+
+function SavedCardPanel({
+  savedCard,
+  checkoutHref,
+  onClearCard,
+}: {
+  savedCard: SavedCard | null;
+  checkoutHref: string;
+  onClearCard: () => void;
+}) {
+  return (
+    <aside className="h-fit rounded-lg border border-[#323416]/10 bg-white p-5">
+      <h2 className="text-lg font-semibold text-[#323416]">Saved card</h2>
+      {savedCard ? (
+        <div className="mt-5 space-y-4">
+          <div className="rounded-lg bg-[#323416] p-5 text-white">
+            <p className="text-sm uppercase tracking-wide text-white/60">
+              {savedCard.scheme ?? "Card"}
+            </p>
+            <p className="mt-8 text-xl font-semibold">
+              **** **** **** {savedCard.last4 ?? "----"}
+            </p>
+            <p className="mt-3 text-sm text-white/70">
+              Expires {savedCard.expiryMonth ?? "--"}/
+              {savedCard.expiryYear ?? "----"}
+            </p>
+          </div>
+          <p className="text-sm leading-6 text-[#323416]/70">
+            {savedCard.email
+              ? `This card can be used from checkout until the server restarts or the demo session expires. Stored for ${savedCard.email}.`
+              : "This card can be used from checkout until the server restarts or the demo session expires."}
+          </p>
+          <Link
+            href={checkoutHref}
+            className="flex h-11 items-center justify-center rounded-md bg-[#8C9E6E] px-4 text-sm font-semibold text-[#323416]"
+          >
+            Use in checkout
+          </Link>
+          <button
+            onClick={onClearCard}
+            className="h-11 w-full rounded-md border border-[#323416]/20 px-4 text-sm font-semibold text-[#323416]"
+          >
+            Clear saved card
+          </button>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm leading-6 text-[#323416]/70">
+          No card is saved for this demo session yet.
+        </p>
+      )}
+    </aside>
+  );
+}
+
 export function ProfileClient() {
   const searchParams = useSearchParams();
   const market = getMarket(searchParams.get("market"));
@@ -379,7 +518,7 @@ export function ProfileClient() {
 
   async function saveTokenizedCard(
     token: string,
-    email: string,
+    email: string | undefined,
     successMessage: string,
   ) {
     const saveResponse = await fetch("/api/profile/saved-card", {
@@ -389,7 +528,7 @@ export function ProfileClient() {
       },
       body: JSON.stringify({
         token,
-        email,
+        ...(email ? { email } : {}),
         market: market.code,
       }),
     });
@@ -506,40 +645,20 @@ export function ProfileClient() {
           Remember a card before checkout
         </h1>
         <p className="mt-3 max-w-2xl text-[#323416]/70">
-          This page shows the tokenization step separately: card details go from
-          the browser to Checkout.com, and this app stores only the reusable
-          instrument reference in server memory.
+          This page compares two in-memory saved-card paths. Card details go
+          from the browser to Checkout.com; this app keeps only safe references
+          in the demo session.
         </p>
 
-        <div className="mt-8 rounded-lg border border-[#323416]/10 bg-white p-1">
-          <div className="grid grid-cols-2 gap-1">
-            {[
-              {
-                id: "web-components" as const,
-                label: "Checkout Web Components",
-              },
-              { id: "direct-api" as const, label: "Direct Tokens API" },
-            ].map((mode) => (
-              <button
-                key={mode.id}
-                type="button"
-                onClick={() => {
-                  setTokenizationMode(mode.id);
-                  setState({ status: "idle" });
-                }}
-                className={`h-11 rounded-md px-3 text-sm font-semibold ${
-                  tokenizationMode === mode.id
-                    ? "bg-[#323416] text-white"
-                    : "text-[#323416]"
-                }`}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <TokenizationModeTabs
+          selectedMode={tokenizationMode}
+          onSelectMode={(mode) => {
+            setTokenizationMode(mode);
+            setState({ status: "idle" });
+          }}
+        />
 
-        {tokenizationMode === "web-components" ? (
+        {tokenizationMode === "web-components" && (
           <WebComponentsCardTokenizer
             key={market.code}
             isSaving={state.status === "loading"}
@@ -547,135 +666,23 @@ export function ProfileClient() {
             onSaveToken={saveTokenizedCard}
             onStateChange={setState}
           />
-        ) : (
-          <form
-            action={handleDirectSaveCard}
-            className="mt-5 grid gap-4 rounded-lg border border-[#323416]/10 bg-white p-5"
-          >
-            <label className="grid gap-2 text-sm font-medium text-[#323416]">
-              Email
-              <input
-                name="email"
-                type="email"
-                required
-                defaultValue="demo.customer@example.com"
-                className="h-11 rounded-md border border-[#323416]/20 px-3"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-[#323416]">
-              Cardholder name
-              <input
-                name="cardholderName"
-                required
-                defaultValue="Demo Customer"
-                className="h-11 rounded-md border border-[#323416]/20 px-3"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-[#323416]">
-              Card number
-              <input
-                inputMode="numeric"
-                name="cardNumber"
-                required
-                placeholder="Use a Checkout.com sandbox card"
-                className="h-11 rounded-md border border-[#323416]/20 px-3"
-              />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <label className="grid gap-2 text-sm font-medium text-[#323416]">
-                Expiry month
-                <input
-                  name="expiryMonth"
-                  inputMode="numeric"
-                  required
-                  placeholder="12"
-                  className="h-11 rounded-md border border-[#323416]/20 px-3"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium text-[#323416]">
-                Expiry year
-                <input
-                  name="expiryYear"
-                  inputMode="numeric"
-                  required
-                  placeholder="2030"
-                  className="h-11 rounded-md border border-[#323416]/20 px-3"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium text-[#323416]">
-                CVV
-                <input
-                  name="cvv"
-                  inputMode="numeric"
-                  required
-                  placeholder="100"
-                  className="h-11 rounded-md border border-[#323416]/20 px-3"
-                />
-              </label>
-            </div>
-            <button
-              disabled={state.status === "loading"}
-              className="h-11 rounded-md bg-[#323416] px-4 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {state.status === "loading"
-                ? "Saving..."
-                : "Tokenize with direct API and save"}
-            </button>
-          </form>
         )}
 
-        {state.status !== "idle" && (
-          <p
-            className={`mt-4 rounded-md px-4 py-3 text-sm ${
-              state.status === "error"
-                ? "bg-red-50 text-red-700"
-                : "bg-[#8C9E6E]/15 text-[#323416]"
-            }`}
-          >
-            {state.status === "loading" ? "Working..." : state.message}
-          </p>
+        {tokenizationMode === "direct-api" && (
+          <DirectTokensApiForm
+            isSaving={state.status === "loading"}
+            onSaveCard={handleDirectSaveCard}
+          />
         )}
+
+        <StatusMessage state={state} />
       </section>
 
-      <aside className="h-fit rounded-lg border border-[#323416]/10 bg-white p-5">
-        <h2 className="text-lg font-semibold text-[#323416]">Saved card</h2>
-        {savedCard ? (
-          <div className="mt-5 space-y-4">
-            <div className="rounded-lg bg-[#323416] p-5 text-white">
-              <p className="text-sm uppercase tracking-wide text-white/60">
-                {savedCard.scheme ?? "Card"}
-              </p>
-              <p className="mt-8 text-xl font-semibold">
-                **** **** **** {savedCard.last4 ?? "----"}
-              </p>
-              <p className="mt-3 text-sm text-white/70">
-                Expires {savedCard.expiryMonth ?? "--"}/
-                {savedCard.expiryYear ?? "----"}
-              </p>
-            </div>
-            <p className="text-sm leading-6 text-[#323416]/70">
-              This card can be used from checkout until the server restarts or
-              the demo session expires.
-            </p>
-            <Link
-              href={checkoutHref}
-              className="flex h-11 items-center justify-center rounded-md bg-[#8C9E6E] px-4 text-sm font-semibold text-[#323416]"
-            >
-              Use in checkout
-            </Link>
-            <button
-              onClick={handleClearCard}
-              className="h-11 w-full rounded-md border border-[#323416]/20 px-4 text-sm font-semibold text-[#323416]"
-            >
-              Clear saved card
-            </button>
-          </div>
-        ) : (
-          <p className="mt-4 text-sm leading-6 text-[#323416]/70">
-            No card is saved for this demo session yet.
-          </p>
-        )}
-      </aside>
+      <SavedCardPanel
+        savedCard={savedCard}
+        checkoutHref={checkoutHref}
+        onClearCard={handleClearCard}
+      />
     </main>
   );
 }

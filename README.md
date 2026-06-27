@@ -75,7 +75,7 @@ Useful routes:
 
 - `/` product catalog loaded through `/api/products`
 - `/basket` demo shopping cart
-- `/profile` Part 2 card tokenization and saved-card onboarding
+- `/profile` in-memory card tokenization and saved-card onboarding
 - `/checkout` preserved Part 2 checkout
 - `/checkout-flow` Part 3 Flow checkout
 - `/payment-complete` safe receipt/status/refund screen
@@ -83,6 +83,8 @@ Useful routes:
 ## Flow and 3DS behavior
 
 Checkout Flow collects customer email before creating a Payment Session through `/api/flow/payment-session`. The browser receives the complete unmodified Payment Session response plus the public key, then mounts Checkout.com Flow. Cardholder details, raw PAN, and CVV stay inside Checkout.com-controlled Flow fields.
+
+The profile page demonstrates two in-memory card-saving approaches. Direct Tokens API and the standalone card component create reusable instruments and store only the safe instrument reference in memory for saved-card checkout.
 
 For synchronous payments, `onPaymentCompleted` links the returned payment ID to the current demo order and confirms status server-side. For redirect or 3DS flows, `/payment/flow/return` treats `cko-payment-id` as a candidate only and verifies payment status server-side before showing a result.
 
@@ -113,7 +115,7 @@ Refund UI appears on the receipt/status panel only when the server confirms a se
 
 - `CHECKOUT_SECRET_KEY`/`CKO_SK` stay server-only.
 - Flow keeps card data out of the application server for the customer-facing checkout.
-- Flow stored-card customer IDs stay server-side in memory and expire with the demo session.
+- In-memory saved-card instruments and Flow stored-card customer IDs stay server-side in demo-session stores.
 - Direct-card mode remains only in the preserved `/checkout` technical demo.
 - The app does not log or persist PAN, CVV, expiry, secret keys, Flow session data, or raw webhook payloads.
 - Demo state is in memory and is cleared when the server restarts or the session expires.

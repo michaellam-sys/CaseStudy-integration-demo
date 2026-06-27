@@ -77,8 +77,8 @@ export async function POST(request: Request) {
         processing_channel_id: processingChannelId,
         capture: true,
         customer: {
-          id: savedCard.customerId,
-          email: savedCard.email,
+          ...(savedCard.customerId ? { id: savedCard.customerId } : {}),
+          ...(savedCard.email ? { email: savedCard.email } : {}),
           phone: toCheckoutCustomerPhone(phone),
         },
         ...(require3ds

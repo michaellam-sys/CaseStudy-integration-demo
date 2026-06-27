@@ -11,7 +11,7 @@ import { markBasketForClearing, useBasket } from "@/components/use-basket";
 type Mode = "payment-link" | "hpp" | "direct-card" | "saved-card";
 
 type SavedCard = {
-  email: string;
+  email?: string;
   scheme?: string;
   last4?: string;
   expiryMonth?: number;
@@ -579,7 +579,9 @@ export function CheckoutClient() {
                       {savedCard.last4 ?? "----"}
                     </p>
                     <p className="mt-1 text-sm text-[#323416]/65">
-                      Stored in server memory for {savedCard.email}
+                      {savedCard.email
+                        ? `Stored in server memory for ${savedCard.email}`
+                        : "Stored in server memory for this demo session"}
                     </p>
                   </div>
                   <label className="mt-4 flex items-start gap-3 rounded-lg border border-[#323416]/10 bg-[#FFFFFD] p-4 text-sm text-[#323416]">

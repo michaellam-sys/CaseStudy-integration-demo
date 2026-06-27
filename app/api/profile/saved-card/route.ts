@@ -37,9 +37,9 @@ export async function POST(request: Request) {
     const email = String(body.email ?? "").trim();
     const token = String(body.token ?? "").trim();
 
-    if (!email || !token.startsWith("tok_")) {
+    if (!token.startsWith("tok_")) {
       return NextResponse.json(
-        { error: "Email and Checkout.com token are required." },
+        { error: "Checkout.com token is required." },
         { status: 400 },
       );
     }
@@ -54,10 +54,14 @@ export async function POST(request: Request) {
           currency: market.currency,
           country: market.country,
           processing_channel_id: processingChannelId,
-          customer: {
-            email,
-            default: true,
-          },
+          ...(email
+            ? {
+                customer: {
+                  email,
+                  default: true,
+                },
+              }
+            : {}),
         },
       },
     );
@@ -72,7 +76,7 @@ export async function POST(request: Request) {
     const savedCard = await saveCard({
       instrumentId: instrument.id,
       customerId: instrument.customer?.id,
-      email: instrument.customer?.email ?? email,
+      email: instrument.customer?.email ?? (email || undefined),
       scheme: instrument.scheme,
       last4: instrument.last4,
       expiryMonth: instrument.expiry_month,

@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 export type SavedCard = {
   instrumentId: string;
   customerId?: string;
-  email: string;
+  email?: string;
   scheme?: string;
   last4?: string;
   expiryMonth?: number;

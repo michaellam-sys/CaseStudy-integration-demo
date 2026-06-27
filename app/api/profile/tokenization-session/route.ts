@@ -17,23 +17,8 @@ type TokenizationPaymentSession = PaymentSessionResponse & {
   id?: string;
 };
 
-class ProfileTokenizationInputError extends Error {}
-
 function isMarketCode(value: unknown): value is MarketCode {
   return value === "HK" || value === "NL" || value === "US";
-}
-
-function normalizeCustomerEmail(value: unknown) {
-  const data = typeof value === "object" && value ? value : {};
-  const email = String((data as Record<string, unknown>).email ?? "").trim();
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new ProfileTokenizationInputError(
-      "A valid customer email is required.",
-    );
-  }
-
-  return email;
 }
 
 export async function POST(request: Request) {
@@ -49,9 +34,6 @@ export async function POST(request: Request) {
     }
 
     const market = getMarket((body as Record<string, unknown>).market);
-    const customerEmail = normalizeCustomerEmail(
-      (body as Record<string, unknown>).customer,
-    );
     const { processingChannelId } = getServerCheckoutConfig();
     const { publicKey } = getPublicCheckoutConfig();
     const reference = createReference(
@@ -73,11 +55,13 @@ export async function POST(request: Request) {
               country: market.country,
             },
           },
-          customer: {
-            email: customerEmail,
-          },
           success_url: `${appUrl}/profile?market=${market.code}`,
           failure_url: `${appUrl}/profile?market=${market.code}`,
+          payment_method_configuration: {
+            card: {
+              store_payment_details: "disabled",
+            },
+          },
           metadata: {
             demo: "caseco-profile-card-verification",
             reference,
@@ -94,10 +78,6 @@ export async function POST(request: Request) {
       currency: market.currency,
     });
   } catch (error) {
-    if (error instanceof ProfileTokenizationInputError) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
     return NextResponse.json(safeCheckoutError(error), { status: 500 });
   }
 }
