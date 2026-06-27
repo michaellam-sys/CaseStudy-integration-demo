@@ -26,6 +26,12 @@ export const zhHK: typeof enUS = {
   unableToConfirm: "無法確認付款狀態",
   flowPayment: "安全付款",
   flowIntro: "Flow 會將信用卡資料保留在 Checkout.com，並處理合資格的 3DS 轉向。",
+  checkoutMode: "結帳模式",
+  guestCheckout: "訪客結帳",
+  guestCheckoutHelp: "無需提供電郵或電話即可繼續。",
+  customerDetailsCheckout: "使用客戶資料",
+  customerDetailsCheckoutHelp:
+    "輸入電郵和電話，以在此示範中啟用儲存信用卡同意選項。",
   customerEmail: "客戶電郵",
   customerEmailHelp:
     "用於啟用 Checkout.com Flow 儲存信用卡同意選項，並在此示範工作階段顯示日後可用的已儲存信用卡。",

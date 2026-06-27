@@ -27,6 +27,12 @@ export const nlNL: typeof enUS = {
   flowPayment: "Veilige betaling",
   flowIntro:
     "Flow houdt kaartgegevens bij Checkout.com en handelt geschikte 3DS-redirects af.",
+  checkoutMode: "Checkoutmodus",
+  guestCheckout: "Gastcheckout",
+  guestCheckoutHelp: "Ga verder zonder e-mail of telefoonnummer.",
+  customerDetailsCheckout: "Klantgegevens gebruiken",
+  customerDetailsCheckoutHelp:
+    "Voer e-mail en telefoonnummer in om opgeslagen-kaarttoestemming in deze demo mogelijk te maken.",
   customerEmail: "E-mail klant",
   customerEmailHelp:
     "Wordt gebruikt om opgeslagen-kaarttoestemming in Checkout.com Flow en toekomstige opgeslagen kaarten in deze demosessie mogelijk te maken.",

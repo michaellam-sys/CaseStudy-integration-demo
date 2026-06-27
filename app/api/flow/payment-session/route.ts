@@ -52,13 +52,27 @@ function isMarketCode(value: unknown): value is MarketCode {
 }
 
 function normalizeFlowCustomer(value: unknown) {
-  const data = typeof value === "object" && value ? value : {};
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== "object") {
+    throw new FlowInputError(
+      "Customer must include email and phone for Flow sessions.",
+    );
+  }
+
+  const data = value;
   const keys = Object.keys(data);
 
   if (keys.some((key) => key !== "email" && key !== "phone")) {
     throw new FlowInputError(
       "Only customer.email and customer.phone are accepted for Flow sessions.",
     );
+  }
+
+  if (!keys.length) {
+    return undefined;
   }
 
   const email = String((data as Record<string, unknown>).email ?? "").trim();
@@ -124,7 +138,9 @@ export async function POST(request: Request) {
     const reference = createReference(`flow-${market.code.toLowerCase()}`);
     const appUrl = getAppUrl(request.url);
     const returnUrl = `${appUrl}/payment/flow/return?reference=${encodeURIComponent(reference)}`;
-    const savedCustomerId = await getFlowCustomerIdByEmail(customer.email);
+    const savedCustomerId = customer
+      ? await getFlowCustomerIdByEmail(customer.email)
+      : undefined;
 
     const paymentSession = await checkoutRequest<FlowPaymentSession>(
       "/payment-sessions",
@@ -140,10 +156,14 @@ export async function POST(request: Request) {
               country: market.country,
             },
           },
-          customer: {
-            email: customer.email,
-            phone: toCheckoutCustomerPhone(customer.phone),
-          },
+          ...(customer
+            ? {
+                customer: {
+                  email: customer.email,
+                  phone: toCheckoutCustomerPhone(customer.phone),
+                },
+              }
+            : {}),
           success_url: `${returnUrl}&result=success`,
           failure_url: `${returnUrl}&result=failure`,
           locale: flowLocale,
@@ -182,7 +202,7 @@ export async function POST(request: Request) {
       amount: basket.totalAmount,
       currency: market.currency,
       market: market.code,
-      customerEmail: customer.email,
+      customerEmail: customer?.email,
     });
 
     return NextResponse.json({

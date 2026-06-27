@@ -33,8 +33,8 @@ type FlowSessionState = {
   amount: number;
   currency: string;
   locale: string;
-  customerEmail: string;
-  customerPhone: CustomerPhone;
+  customerEmail?: string;
+  customerPhone?: CustomerPhone;
 };
 
 type Result = {
@@ -42,6 +42,8 @@ type Result = {
   title: string;
   detail?: string;
 };
+
+type CheckoutMode = "guest" | "customer";
 
 async function readError(response: Response) {
   const data = await response.json().catch(() => ({}));
@@ -91,6 +93,7 @@ export function CheckoutFlowClient() {
   const [customerEmail, setCustomerEmail] = useState(
     "demo.customer@example.com",
   );
+  const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("guest");
   const [phoneCountryCode, setPhoneCountryCode] = useState(
     defaultCustomerPhone(market.country).countryCode,
   );
@@ -115,7 +118,15 @@ export function CheckoutFlowClient() {
       setFlowSession(null);
       setResult(null);
     });
-  }, [items, market.code, locale, customerEmail, phoneCountryCode, phoneNumber]);
+  }, [
+    items,
+    market.code,
+    locale,
+    checkoutMode,
+    customerEmail,
+    phoneCountryCode,
+    phoneNumber,
+  ]);
 
   useEffect(() => {
     if (!flowSession || !flowContainerRef.current) {
@@ -125,9 +136,13 @@ export function CheckoutFlowClient() {
     let isMounted = true;
     const activeFlowSession = flowSession;
     const flowContainer = flowContainerRef.current;
-    const phoneData = toCheckoutComponentPhoneData(
-      activeFlowSession.customerPhone,
-    );
+    const customerData =
+      activeFlowSession.customerEmail && activeFlowSession.customerPhone
+        ? {
+            email: activeFlowSession.customerEmail,
+            ...toCheckoutComponentPhoneData(activeFlowSession.customerPhone),
+          }
+        : {};
 
     async function mountFlow() {
       flowComponentRef.current?.unmount();
@@ -143,23 +158,16 @@ export function CheckoutFlowClient() {
           translations: flowTranslations,
           componentOptions: {
             data: {
-              email: activeFlowSession.customerEmail,
-              ...phoneData,
+              ...customerData,
               billingCountry: market.country,
             },
             card: {
               displayCardholderName: "top",
               displayCvv: "mandatory",
-              data: {
-                email: activeFlowSession.customerEmail,
-                ...phoneData,
-              },
+              data: customerData,
             },
             remember_me: {
-              data: {
-                email: activeFlowSession.customerEmail,
-                ...phoneData,
-              },
+              data: customerData,
             },
           },
           onPaymentCompleted: async (_component, payment) => {
@@ -251,30 +259,34 @@ export function CheckoutFlowClient() {
       return;
     }
 
-    const normalizedEmail = customerEmail.trim();
-    let normalizedPhone: CustomerPhone;
+    let normalizedEmail: string | undefined;
+    let normalizedPhone: CustomerPhone | undefined;
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setResult({
-        tone: "error",
-        title: copy.validationFailed,
-        detail: copy.emailInvalid,
-      });
-      return;
-    }
+    if (checkoutMode === "customer") {
+      normalizedEmail = customerEmail.trim();
 
-    try {
-      normalizedPhone = normalizeCustomerPhone({
-        countryCode: phoneCountryCode,
-        number: phoneNumber,
-      });
-    } catch {
-      setResult({
-        tone: "error",
-        title: copy.validationFailed,
-        detail: copy.phoneInvalid,
-      });
-      return;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        setResult({
+          tone: "error",
+          title: copy.validationFailed,
+          detail: copy.emailInvalid,
+        });
+        return;
+      }
+
+      try {
+        normalizedPhone = normalizeCustomerPhone({
+          countryCode: phoneCountryCode,
+          number: phoneNumber,
+        });
+      } catch {
+        setResult({
+          tone: "error",
+          title: copy.validationFailed,
+          detail: copy.phoneInvalid,
+        });
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -291,10 +303,14 @@ export function CheckoutFlowClient() {
           market: market.code,
           basket: items,
           locale,
-          customer: {
-            email: normalizedEmail,
-            phone: normalizedPhone,
-          },
+          ...(normalizedEmail && normalizedPhone
+            ? {
+                customer: {
+                  email: normalizedEmail,
+                  phone: normalizedPhone,
+                },
+              }
+            : {}),
         }),
       });
 
@@ -382,28 +398,76 @@ export function CheckoutFlowClient() {
         </div>
 
         <div className="mt-6 rounded-lg border border-[#323416]/10 bg-white p-5">
-          <label className="grid gap-2 text-sm font-medium text-[#323416]">
-            {copy.customerEmail}
-            <input
-              type="email"
-              value={customerEmail}
-              onChange={(event) => setCustomerEmail(event.target.value)}
-              className="h-11 rounded-md border border-[#323416]/20 px-3"
-            />
-          </label>
-          <p className="mt-2 text-sm leading-6 text-[#323416]/65">
-            {copy.customerEmailHelp}
-          </p>
-          <div className="mt-4">
-            <CustomerPhoneInput
-              countryCode={phoneCountryCode}
-              phoneNumber={phoneNumber}
-              onCountryCodeChange={setPhoneCountryCode}
-              onPhoneNumberChange={setPhoneNumber}
-              countryCodeLabel={copy.phoneCountryCode}
-              phoneNumberLabel={copy.phoneNumber}
-            />
-          </div>
+          <fieldset>
+            <legend className="text-sm font-semibold text-[#323416]">
+              {copy.checkoutMode}
+            </legend>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="flex gap-3 rounded-md border border-[#323416]/15 p-3 text-sm text-[#323416]">
+                <input
+                  type="radio"
+                  name="checkoutMode"
+                  value="guest"
+                  checked={checkoutMode === "guest"}
+                  onChange={() => setCheckoutMode("guest")}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block font-medium">
+                    {copy.guestCheckout}
+                  </span>
+                  <span className="mt-1 block text-[#323416]/65">
+                    {copy.guestCheckoutHelp}
+                  </span>
+                </span>
+              </label>
+              <label className="flex gap-3 rounded-md border border-[#323416]/15 p-3 text-sm text-[#323416]">
+                <input
+                  type="radio"
+                  name="checkoutMode"
+                  value="customer"
+                  checked={checkoutMode === "customer"}
+                  onChange={() => setCheckoutMode("customer")}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block font-medium">
+                    {copy.customerDetailsCheckout}
+                  </span>
+                  <span className="mt-1 block text-[#323416]/65">
+                    {copy.customerDetailsCheckoutHelp}
+                  </span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          {checkoutMode === "customer" && (
+            <div className="mt-5">
+              <label className="grid gap-2 text-sm font-medium text-[#323416]">
+                {copy.customerEmail}
+                <input
+                  type="email"
+                  value={customerEmail}
+                  onChange={(event) => setCustomerEmail(event.target.value)}
+                  className="h-11 rounded-md border border-[#323416]/20 px-3"
+                />
+              </label>
+              <p className="mt-2 text-sm leading-6 text-[#323416]/65">
+                {copy.customerEmailHelp}
+              </p>
+              <div className="mt-4">
+                <CustomerPhoneInput
+                  countryCode={phoneCountryCode}
+                  phoneNumber={phoneNumber}
+                  onCountryCodeChange={setPhoneCountryCode}
+                  onPhoneNumberChange={setPhoneNumber}
+                  countryCodeLabel={copy.phoneCountryCode}
+                  phoneNumberLabel={copy.phoneNumber}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 rounded-lg border border-[#323416]/10 bg-white p-5">

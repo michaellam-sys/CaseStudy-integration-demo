@@ -1,8 +1,7 @@
 export const enUS = {
   checkoutEyebrow: "Checkout Flow",
   checkoutTitle: "Checkout.com Flow checkout",
-  checkoutIntro:
-    "Choose a market and pay through Checkout.com Flow.",
+  checkoutIntro: "Choose a market and pay through Checkout.com Flow.",
   language: "Language",
   market: "Market",
   orderSummary: "Order summary",
@@ -26,6 +25,12 @@ export const enUS = {
   flowPayment: "Secure payment",
   flowIntro:
     "Flow keeps card details with Checkout.com and handles eligible 3DS redirects.",
+  checkoutMode: "Checkout mode",
+  guestCheckout: "Guest checkout",
+  guestCheckoutHelp: "Continue without email or phone details.",
+  customerDetailsCheckout: "Provide customer details",
+  customerDetailsCheckoutHelp:
+    "Enter email and phone to enable saved-card consent in this demo.",
   customerEmail: "Customer email",
   customerEmailHelp:
     "Used to enable Checkout.com Flow saved-card consent and future stored-card display in this demo session.",
