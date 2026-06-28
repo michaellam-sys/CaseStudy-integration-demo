@@ -66,6 +66,7 @@ function paymentCompleteUrl(input: {
     amount: String(input.amount),
     currency: input.currency,
     paymentMethod: "Checkout.com Flow",
+    source: "flow",
     transactionDate: new Date().toISOString(),
   });
 

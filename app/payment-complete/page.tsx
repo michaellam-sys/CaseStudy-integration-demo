@@ -225,7 +225,10 @@ export default async function PaymentCompletePage({
           </Link>
         </div>
       </section>
-      <PaymentStatusClient paymentId={params.paymentId ?? checkoutReference} />
+      <PaymentStatusClient
+        paymentId={params.paymentId ?? checkoutReference}
+        showFlowRefundWebhook={params.source === "flow"}
+      />
     </main>
   );
 }
