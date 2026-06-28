@@ -1,0 +1,49 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cko-checkout-demo",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-28",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "CHECKOUT_API_BASE_URL": "__CHECKOUT_API_BASE_URL__",
+    "CHECKOUT_PROCESSING_CHANNEL_ID": "__CHECKOUT_PROCESSING_CHANNEL_ID__",
+    "NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY": "__NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY__",
+    "NEXT_PUBLIC_CHECKOUT_PROCESSING_CHANNEL_ID": "__NEXT_PUBLIC_CHECKOUT_PROCESSING_CHANNEL_ID__",
+    "APP_URL": "__APP_URL__",
+    "WEBHOOK_PUBLIC_URL": "__WEBHOOK_PUBLIC_URL__",
+    "CHECKOUT_WEBHOOK_WORKFLOW_ID": "__CHECKOUT_WEBHOOK_WORKFLOW_ID__"
+  },
+  "containers": [
+    {
+      "class_name": "CheckoutContainer",
+      "image": "./Dockerfile",
+      "image_build_context": ".",
+      "max_instances": 1,
+      "image_vars": {
+        "CHECKOUT_API_BASE_URL": "__CHECKOUT_API_BASE_URL__",
+        "CHECKOUT_PROCESSING_CHANNEL_ID": "__CHECKOUT_PROCESSING_CHANNEL_ID__",
+        "NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY": "__NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY__",
+        "NEXT_PUBLIC_CHECKOUT_PROCESSING_CHANNEL_ID": "__NEXT_PUBLIC_CHECKOUT_PROCESSING_CHANNEL_ID__",
+        "APP_URL": "__APP_URL__",
+        "WEBHOOK_PUBLIC_URL": "__WEBHOOK_PUBLIC_URL__",
+        "CHECKOUT_WEBHOOK_WORKFLOW_ID": "__CHECKOUT_WEBHOOK_WORKFLOW_ID__"
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHECKOUT_CONTAINER",
+        "class_name": "CheckoutContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CheckoutContainer"]
+    }
+  ]
+}
