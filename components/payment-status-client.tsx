@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  WebhookStatusPanel,
+  type WebhookStatusEvent,
+} from "@/components/webhook-status-panel";
 
 type PaymentStatus = {
   id?: string;
@@ -23,7 +27,8 @@ type PaymentStatus = {
   }[];
 };
 
-type PaymentEvent = NonNullable<PaymentStatus["events"]>[number];
+type PaymentEvent = NonNullable<PaymentStatus["events"]>[number] &
+  WebhookStatusEvent;
 
 type RefundWebhookState = {
   status: "waiting" | "received";
@@ -251,60 +256,15 @@ export function PaymentStatusClient({
             <p className="mt-3 text-sm font-medium text-[#323416]">{message}</p>
           )}
           {showFlowRefundWebhook && refundWebhook && (
-            <div
-              className={`mt-4 rounded-lg border p-4 ${
-                refundWebhook.status === "received"
-                  ? "border-[#8C9E6E]/30 bg-[#F3F7ED]"
-                  : "border-[#323416]/10 bg-white"
-              }`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <h4 className="font-semibold text-[#323416]">
-                  Refund webhook
-                </h4>
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    refundWebhook.status === "received"
-                      ? "bg-[#8C9E6E] text-white"
-                      : "bg-[#323416]/10 text-[#323416]/70"
-                  }`}
-                >
-                  {refundWebhook.status === "received"
-                    ? "Received"
-                    : "Waiting"}
-                </span>
-              </div>
-              {refundWebhook.reference && (
-                <p className="mt-2 break-all text-sm text-[#323416]/70">
-                  Refund reference: {refundWebhook.reference}
-                </p>
-              )}
-              {refundWebhook.event ? (
-                <div className="mt-3 space-y-1 text-sm text-[#323416]/75">
-                  <p>
-                    <span className="font-medium text-[#323416]">
-                      {refundWebhook.event.label}
-                    </span>{" "}
-                    {new Date(refundWebhook.event.createdAt).toLocaleString()}
-                  </p>
-                  <p className="break-all">Event ID: {refundWebhook.event.id}</p>
-                  {refundWebhook.event.responseSummary && (
-                    <p>Gateway response: {refundWebhook.event.responseSummary}</p>
-                  )}
-                </div>
-              ) : (
-                <p className="mt-3 text-sm leading-6 text-[#323416]/70">
-                  Waiting for Checkout.com to send the asynchronous refund
-                  webhook.
-                </p>
-              )}
-              {refundWebhook.lastCheckedAt && (
-                <p className="mt-3 text-xs text-[#323416]/50">
-                  Last checked{" "}
-                  {new Date(refundWebhook.lastCheckedAt).toLocaleTimeString()}
-                </p>
-              )}
-            </div>
+            <WebhookStatusPanel
+              title="Refund webhook"
+              status={refundWebhook.status}
+              referenceLabel="Refund reference"
+              reference={refundWebhook.reference}
+              event={refundWebhook.event}
+              waitingDetail="Waiting for Checkout.com to send the asynchronous refund webhook."
+              lastCheckedAt={refundWebhook.lastCheckedAt}
+            />
           )}
         </div>
       )}

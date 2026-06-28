@@ -7,6 +7,10 @@ import { calculateBasket, formatMoney, getMarket } from "@/lib/catalog";
 import { defaultCustomerPhone } from "@/lib/customer-phone";
 import { CustomerPhoneInput } from "@/components/customer-phone-input";
 import { markBasketForClearing, useBasket } from "@/components/use-basket";
+import {
+  WebhookStatusPanel,
+  type WebhookStatusEvent,
+} from "@/components/webhook-status-panel";
 
 type Mode = "payment-link" | "hpp" | "direct-card" | "saved-card";
 
@@ -26,13 +30,8 @@ type Result = {
   paymentLinkId?: string;
 };
 
-type PaymentLinkWebhookEvent = {
-  id: string;
+type PaymentLinkWebhookEvent = WebhookStatusEvent & {
   type?: string;
-  label: string;
-  createdAt: string;
-  paymentId?: string;
-  responseSummary?: string;
 };
 
 type PaymentLinkWebhookState = {
@@ -800,73 +799,20 @@ export function CheckoutClient() {
         )}
 
         {mode === "payment-link" && paymentLinkWebhook && (
-          <div
-            className={`mt-5 rounded-lg border p-5 ${
-              paymentLinkWebhook.status === "received"
-                ? "border-[#8C9E6E]/30 bg-[#F3F7ED]"
-                : "border-[#323416]/10 bg-white"
-            }`}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-semibold text-[#323416]">
-                Checkout.com webhook
-              </h2>
-              <span
-                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  paymentLinkWebhook.status === "received"
-                    ? "bg-[#8C9E6E] text-white"
-                    : "bg-[#323416]/10 text-[#323416]/70"
-                }`}
-              >
-                {paymentLinkWebhook.status === "received"
-                  ? "Received"
-                  : "Waiting"}
-              </span>
-            </div>
-            <p className="mt-2 break-all text-sm text-[#323416]/70">
-              Order reference: {paymentLinkWebhook.reference}
-            </p>
-            {paymentLinkWebhook.event ? (
-              <div className="mt-3 space-y-1 text-sm text-[#323416]/75">
-                <p>
-                  <span className="font-medium text-[#323416]">
-                    {paymentLinkWebhook.event.label}
-                  </span>{" "}
-                  {new Date(
-                    paymentLinkWebhook.event.createdAt,
-                  ).toLocaleString()}
-                </p>
-                <p className="break-all">
-                  Event ID: {paymentLinkWebhook.event.id}
-                </p>
-                {paymentLinkWebhook.event.paymentId && (
-                  <p className="break-all">
-                    Payment ID: {paymentLinkWebhook.event.paymentId}
-                  </p>
-                )}
-                {paymentLinkWebhook.event.responseSummary && (
-                  <p>
-                    Gateway response:{" "}
-                    {paymentLinkWebhook.event.responseSummary}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm leading-6 text-[#323416]/70">
-                Complete the generated payment link. This panel will update
-                when Checkout.com sends the asynchronous payment webhook.
-              </p>
-            )}
-            {paymentLinkWebhook.lastCheckedAt && (
-              <p className="mt-3 text-xs text-[#323416]/50">
-                Last checked{" "}
-                {new Date(paymentLinkWebhook.lastCheckedAt).toLocaleTimeString()}
-                {paymentLinkWebhook.checkFailed
-                  ? " / order activity unavailable"
-                  : ""}
-              </p>
-            )}
-          </div>
+          <WebhookStatusPanel
+            title="Checkout.com webhook"
+            status={paymentLinkWebhook.status}
+            referenceLabel="Order reference"
+            reference={paymentLinkWebhook.reference}
+            event={paymentLinkWebhook.event}
+            waitingDetail="Complete the generated payment link. This panel will update when Checkout.com sends the asynchronous payment webhook."
+            lastCheckedAt={paymentLinkWebhook.lastCheckedAt}
+            checkFailedDetail={
+              paymentLinkWebhook.checkFailed
+                ? "order activity unavailable"
+                : undefined
+            }
+          />
         )}
       </section>
 
