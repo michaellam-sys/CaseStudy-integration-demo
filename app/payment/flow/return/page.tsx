@@ -101,7 +101,10 @@ export default async function FlowReturnPage({
           </Link>
         </div>
       </section>
-      <PaymentStatusClient paymentId={status?.id} />
+      <PaymentStatusClient
+        paymentId={status?.id}
+        showFlowRefundWebhook={Boolean(status?.id)}
+      />
     </main>
   );
 }
