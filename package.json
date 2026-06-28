@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:customer-phone": "tsx scripts/test-customer-phone.ts",
     "webhook:register": "tsx scripts/register-checkout-webhook.ts",
     "webhook:test": "tsx scripts/test-checkout-webhook.ts"
   },

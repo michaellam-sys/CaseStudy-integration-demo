@@ -15,6 +15,13 @@ export class CustomerPhoneInputError extends Error {}
 const phoneCountryCodes = new Set<string>(
   phoneCountryOptions.map((option) => option.countryCode),
 );
+const checkoutPhoneDialCodes: Record<PhoneCountryCode, string> =
+  Object.fromEntries(
+    phoneCountryOptions.map((option) => [
+      option.countryCode,
+      option.dialCode,
+    ]),
+  ) as Record<PhoneCountryCode, string>;
 
 export function isPhoneCountryCode(
   value: string,
@@ -67,7 +74,7 @@ export function defaultCustomerPhone(country?: string): CustomerPhone {
 
 export function toCheckoutCustomerPhone(phone: CustomerPhone) {
   return {
-    country_code: phone.countryCode,
+    country_code: checkoutPhoneDialCodes[phone.countryCode],
     number: phone.number,
   };
 }
