@@ -47,20 +47,31 @@ jobs:
             "CHECKOUT_PROCESSING_CHANNEL_ID",
             "NEXT_PUBLIC_CHECKOUT_PUBLIC_KEY",
             "NEXT_PUBLIC_CHECKOUT_PROCESSING_CHANNEL_ID",
-            "APP_URL",
           ];
           const optional = ["WEBHOOK_PUBLIC_URL", "CHECKOUT_WEBHOOK_WORKFLOW_ID"];
           const names = [...required, ...optional];
           const missing = required.filter((name) => !process.env[name]);
+          const workerPublicUrl = "https://cko-checkout-demo.michael-lam-3f0.workers.dev";
 
           if (missing.length > 0) {
             throw new Error(`Missing GitHub Variables: ${missing.join(", ")}`);
           }
 
+          const values = Object.fromEntries(names.map((name) => [name, process.env[name] ?? ""]));
+          values.APP_URL =
+            !process.env.APP_URL || process.env.APP_URL.startsWith("http://localhost")
+              ? workerPublicUrl
+              : process.env.APP_URL;
+          values.WEBHOOK_PUBLIC_URL =
+            !process.env.WEBHOOK_PUBLIC_URL ||
+            process.env.WEBHOOK_PUBLIC_URL.startsWith("http://localhost")
+              ? `${workerPublicUrl}/api/webhooks/checkout`
+              : process.env.WEBHOOK_PUBLIC_URL;
+
           let config = fs.readFileSync("wrangler.jsonc", "utf8");
 
-          for (const name of names) {
-            config = config.replaceAll(`__${name}__`, process.env[name] ?? "");
+          for (const [name, value] of Object.entries(values)) {
+            config = config.replaceAll(`__${name}__`, value);
           }
 
           fs.writeFileSync("wrangler.jsonc", config);
@@ -74,9 +85,35 @@ jobs:
           WEBHOOK_PUBLIC_URL: ${{ vars.WEBHOOK_PUBLIC_URL }}
           CHECKOUT_WEBHOOK_WORKFLOW_ID: ${{ vars.CHECKOUT_WEBHOOK_WORKFLOW_ID }}
 
+      - name: Render Wrangler secrets file
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const required = [
+            "CHECKOUT_SECRET_KEY",
+            "CHECKOUT_WEBHOOK_AUTHORIZATION_KEY",
+            "CHECKOUT_WEBHOOK_SIGNATURE_KEY",
+          ];
+          const missing = required.filter((name) => !process.env[name]);
+
+          if (missing.length > 0) {
+            throw new Error(`Missing GitHub Secrets: ${missing.join(", ")}`);
+          }
+
+          fs.writeFileSync(
+            ".wrangler-secrets.json",
+            JSON.stringify(Object.fromEntries(required.map((name) => [name, process.env[name]]))),
+          );
+          NODE
+        env:
+          CHECKOUT_SECRET_KEY: ${{ secrets.CHECKOUT_SECRET_KEY }}
+          CHECKOUT_WEBHOOK_AUTHORIZATION_KEY: ${{ secrets.CHECKOUT_WEBHOOK_AUTHORIZATION_KEY }}
+          CHECKOUT_WEBHOOK_SIGNATURE_KEY: ${{ secrets.CHECKOUT_WEBHOOK_SIGNATURE_KEY }}
+
       - name: Deploy Worker and Container
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          command: deploy --secrets-file .wrangler-secrets.json
