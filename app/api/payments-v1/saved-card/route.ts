@@ -3,6 +3,7 @@ import {
   checkoutRequest,
   createIdempotencyKey,
   createReference,
+  getAppUrl,
   getServerCheckoutConfig,
   safeCheckoutError,
 } from "@/lib/checkout";
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
     const reference = createReference("saved");
-    const origin = new URL(request.url).origin;
+    const origin = getAppUrl(request.url);
     const paymentMethod = "Saved credit card";
     const cardSummary = `${savedCard.scheme ?? "Card"} ending ${
       savedCard.last4 ?? "----"

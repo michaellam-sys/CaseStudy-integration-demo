@@ -3,6 +3,7 @@ import {
   checkoutRequest,
   createIdempotencyKey,
   createReference,
+  getAppUrl,
   getServerCheckoutConfig,
   safeCheckoutError,
 } from "@/lib/checkout";
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
     const reference = createReference("direct");
-    const origin = new URL(request.url).origin;
+    const origin = getAppUrl(request.url);
     const cardNumber = String(body.cardNumber ?? "").replace(/\s/g, "");
     const cardholderName = String(body.cardholderName ?? "").trim();
     const email = String(body.email ?? "").trim();

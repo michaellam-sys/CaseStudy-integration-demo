@@ -3,6 +3,7 @@ import {
   checkoutRequest,
   createIdempotencyKey,
   createReference,
+  getAppUrl,
   getServerCheckoutConfig,
   safeCheckoutError,
 } from "@/lib/checkout";
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
     const phone = normalizeCustomerPhone(body.phone);
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
-    const origin = new URL(request.url).origin;
+    const origin = getAppUrl(request.url);
     const reference = createReference("hpp");
     const commonReturnParams = {
       origin,
