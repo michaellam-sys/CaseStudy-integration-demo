@@ -79,12 +79,28 @@ function statusFromEvent(type: string) {
   return statuses[type];
 }
 
+function logWebhook(
+  level: "log" | "warn" | "error",
+  message: string,
+  details: Record<string, string | number | boolean | undefined>,
+) {
+  console[level]({
+    event: "checkout.webhook",
+    message,
+    ...details,
+  });
+}
+
 export async function POST(request: Request) {
   let config: ReturnType<typeof webhookConfig>;
 
   try {
     config = webhookConfig();
   } catch (error) {
+    logWebhook("error", "Webhook configuration is missing", {
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Webhook not configured." },
       { status: 500 },
@@ -95,6 +111,12 @@ export async function POST(request: Request) {
   const authorization = request.headers.get("authorization") ?? "";
 
   if (!safeEqual(authorization, config.authorizationKey)) {
+    logWebhook("warn", "Rejected webhook with invalid authorization", {
+      userAgent: request.headers.get("user-agent") ?? undefined,
+      ckoCorrelationId: request.headers.get("cko-correlation-id") ?? undefined,
+      ckoInvocationId: request.headers.get("cko-invocation-id") ?? undefined,
+    });
+
     return NextResponse.json({ error: "Invalid webhook authorization." }, { status: 401 });
   }
 
@@ -104,6 +126,12 @@ export async function POST(request: Request) {
   const actualSignature = request.headers.get("cko-signature") ?? "";
 
   if (!safeEqual(actualSignature, expectedSignature)) {
+    logWebhook("warn", "Rejected webhook with invalid signature", {
+      userAgent: request.headers.get("user-agent") ?? undefined,
+      ckoCorrelationId: request.headers.get("cko-correlation-id") ?? undefined,
+      ckoInvocationId: request.headers.get("cko-invocation-id") ?? undefined,
+    });
+
     return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
 
@@ -112,14 +140,35 @@ export async function POST(request: Request) {
   try {
     event = JSON.parse(rawBody) as CheckoutWebhook;
   } catch {
+    logWebhook("warn", "Rejected webhook with invalid JSON", {
+      ckoCorrelationId: request.headers.get("cko-correlation-id") ?? undefined,
+      ckoInvocationId: request.headers.get("cko-invocation-id") ?? undefined,
+    });
+
     return NextResponse.json({ error: "Invalid webhook JSON." }, { status: 400 });
   }
 
   if (!event.id || !event.type) {
+    logWebhook("warn", "Rejected webhook with missing event fields", {
+      eventId: event.id,
+      eventType: event.type,
+      ckoCorrelationId: request.headers.get("cko-correlation-id") ?? undefined,
+      ckoInvocationId: request.headers.get("cko-invocation-id") ?? undefined,
+    });
+
     return NextResponse.json({ error: "Invalid webhook event." }, { status: 400 });
   }
 
   if (!markWebhookEventSeen(event.id)) {
+    logWebhook("log", "Accepted duplicate webhook event", {
+      eventId: event.id,
+      eventType: event.type,
+      paymentId: event.data?.payment_id ?? event.data?.id,
+      reference: event.data?.reference ?? event.data?.metadata?.reference,
+      ckoCorrelationId: request.headers.get("cko-correlation-id") ?? undefined,
+      ckoInvocationId: request.headers.get("cko-invocation-id") ?? undefined,
+    });
+
     return NextResponse.json({ accepted: true, duplicate: true });
   }
 
@@ -140,7 +189,7 @@ export async function POST(request: Request) {
     const orderEvent: OrderEvent = {
       id: event.id,
       type: event.type,
-      label: eventLabel(event.type),
+      label: `${eventLabel(event.type)} via webhook`,
       createdAt: event.created_on ?? new Date().toISOString(),
       paymentId,
       amount: event.data?.amount,
@@ -187,6 +236,20 @@ export async function POST(request: Request) {
       };
     }
   }
+
+  logWebhook("log", "Accepted webhook event", {
+    eventId: event.id,
+    eventType: event.type,
+    paymentId,
+    reference,
+    amount: event.data?.amount,
+    currency: event.data?.currency,
+    responseCode: event.data?.response_code,
+    responseSummary: event.data?.response_summary,
+    matchedOrder: Boolean(order),
+    ckoCorrelationId: request.headers.get("cko-correlation-id") ?? undefined,
+    ckoInvocationId: request.headers.get("cko-invocation-id") ?? undefined,
+  });
 
   return NextResponse.json({ accepted: true });
 }

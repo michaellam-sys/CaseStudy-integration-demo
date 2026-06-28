@@ -26,6 +26,23 @@ type Result = {
   paymentLinkId?: string;
 };
 
+type PaymentLinkWebhookEvent = {
+  id: string;
+  type?: string;
+  label: string;
+  createdAt: string;
+  paymentId?: string;
+  responseSummary?: string;
+};
+
+type PaymentLinkWebhookState = {
+  reference: string;
+  status: "waiting" | "received";
+  event?: PaymentLinkWebhookEvent;
+  lastCheckedAt?: string;
+  checkFailed?: boolean;
+};
+
 type Receipt = {
   transactionDate?: string;
   reference?: string;
@@ -41,6 +58,16 @@ const modes: { id: Mode; label: string }[] = [
   { id: "direct-card", label: "Direct Credit Card" },
   { id: "saved-card", label: "Saved Credit Card" },
 ];
+
+const webhookEventTypes = new Set([
+  "payment_approved",
+  "payment_captured",
+  "payment_declined",
+  "payment_pending",
+  "payment_refunded",
+  "payment_refund_pending",
+  "payment_refund_declined",
+]);
 
 function luhn(value: string) {
   let sum = 0;
@@ -74,6 +101,21 @@ function isFutureExpiry(month: number, year: number) {
 async function readError(response: Response) {
   const data = await response.json().catch(() => ({}));
   return data.errorCodes?.[0] ?? data.error ?? "Request failed.";
+}
+
+function latestWebhookEvent(events: PaymentLinkWebhookEvent[]) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+
+    if (
+      (event.type && webhookEventTypes.has(event.type)) ||
+      event.label.toLowerCase().includes("via webhook")
+    ) {
+      return event;
+    }
+  }
+
+  return undefined;
 }
 
 function goToPaymentComplete(data: {
@@ -147,6 +189,8 @@ export function CheckoutClient() {
   const [require3ds, setRequire3ds] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [paymentLinkWebhook, setPaymentLinkWebhook] =
+    useState<PaymentLinkWebhookState | null>(null);
   const customerPhone = {
     countryCode: phoneCountryCode,
     number: phoneNumber,
@@ -157,6 +201,75 @@ export function CheckoutClient() {
       .then((response) => response.json())
       .then((data) => setSavedCard(data.savedCard));
   }, []);
+
+  useEffect(() => {
+    if (
+      !paymentLinkWebhook?.reference ||
+      paymentLinkWebhook.status === "received"
+    ) {
+      return;
+    }
+
+    const reference = paymentLinkWebhook.reference;
+    const encodedReference = encodeURIComponent(reference);
+    let isMounted = true;
+    let attempts = 0;
+
+    async function checkWebhook() {
+      const response = await fetch(`/api/orders/${encodedReference}`);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (!response.ok) {
+        setPaymentLinkWebhook((current) =>
+          current?.reference === reference
+            ? {
+                ...current,
+                lastCheckedAt: new Date().toISOString(),
+                checkFailed: true,
+              }
+            : current,
+        );
+        return;
+      }
+
+      const data = await response.json();
+      const events = (data.order?.events ?? []) as PaymentLinkWebhookEvent[];
+      const event = latestWebhookEvent(events);
+
+      setPaymentLinkWebhook((current) =>
+        current?.reference === reference
+          ? {
+              ...current,
+              status: event ? "received" : "waiting",
+              event,
+              lastCheckedAt: new Date().toISOString(),
+              checkFailed: false,
+            }
+          : current,
+      );
+    }
+
+    checkWebhook().catch(() => undefined);
+
+    const interval = window.setInterval(() => {
+      attempts += 1;
+
+      if (attempts >= 60) {
+        window.clearInterval(interval);
+        return;
+      }
+
+      checkWebhook().catch(() => undefined);
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+    };
+  }, [paymentLinkWebhook?.reference, paymentLinkWebhook?.status]);
 
   async function postJson(path: string, body: unknown) {
     setIsLoading(true);
@@ -189,6 +302,8 @@ export function CheckoutClient() {
   }
 
   async function handlePaymentLink() {
+    setPaymentLinkWebhook(null);
+
     const data = await postJson("/api/checkout-v1/payment-link", {
       market: market.code,
       email,
@@ -198,6 +313,13 @@ export function CheckoutClient() {
 
     if (!data) {
       return;
+    }
+
+    if (data.reference) {
+      setPaymentLinkWebhook({
+        reference: data.reference,
+        status: "waiting",
+      });
     }
 
     setResult({
@@ -424,6 +546,7 @@ export function CheckoutClient() {
               onClick={() => {
                 setMode(item.id);
                 setResult(null);
+                setPaymentLinkWebhook(null);
               }}
               className={`rounded-lg border p-4 text-left font-semibold ${
                 mode === item.id
@@ -672,6 +795,76 @@ export function CheckoutClient() {
                   </button>
                 )}
               </div>
+            )}
+          </div>
+        )}
+
+        {mode === "payment-link" && paymentLinkWebhook && (
+          <div
+            className={`mt-5 rounded-lg border p-5 ${
+              paymentLinkWebhook.status === "received"
+                ? "border-[#8C9E6E]/30 bg-[#F3F7ED]"
+                : "border-[#323416]/10 bg-white"
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold text-[#323416]">
+                Checkout.com webhook
+              </h2>
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  paymentLinkWebhook.status === "received"
+                    ? "bg-[#8C9E6E] text-white"
+                    : "bg-[#323416]/10 text-[#323416]/70"
+                }`}
+              >
+                {paymentLinkWebhook.status === "received"
+                  ? "Received"
+                  : "Waiting"}
+              </span>
+            </div>
+            <p className="mt-2 break-all text-sm text-[#323416]/70">
+              Order reference: {paymentLinkWebhook.reference}
+            </p>
+            {paymentLinkWebhook.event ? (
+              <div className="mt-3 space-y-1 text-sm text-[#323416]/75">
+                <p>
+                  <span className="font-medium text-[#323416]">
+                    {paymentLinkWebhook.event.label}
+                  </span>{" "}
+                  {new Date(
+                    paymentLinkWebhook.event.createdAt,
+                  ).toLocaleString()}
+                </p>
+                <p className="break-all">
+                  Event ID: {paymentLinkWebhook.event.id}
+                </p>
+                {paymentLinkWebhook.event.paymentId && (
+                  <p className="break-all">
+                    Payment ID: {paymentLinkWebhook.event.paymentId}
+                  </p>
+                )}
+                {paymentLinkWebhook.event.responseSummary && (
+                  <p>
+                    Gateway response:{" "}
+                    {paymentLinkWebhook.event.responseSummary}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-[#323416]/70">
+                Complete the generated payment link. This panel will update
+                when Checkout.com sends the asynchronous payment webhook.
+              </p>
+            )}
+            {paymentLinkWebhook.lastCheckedAt && (
+              <p className="mt-3 text-xs text-[#323416]/50">
+                Last checked{" "}
+                {new Date(paymentLinkWebhook.lastCheckedAt).toLocaleTimeString()}
+                {paymentLinkWebhook.checkFailed
+                  ? " / order activity unavailable"
+                  : ""}
+              </p>
             )}
           </div>
         )}

@@ -17,6 +17,7 @@ import {
   normalizeCustomerPhone,
   toCheckoutCustomerPhone,
 } from "@/lib/customer-phone";
+import { saveOrder } from "@/lib/session-store";
 
 export const runtime = "nodejs";
 
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
     const phone = normalizeCustomerPhone(body.phone);
     const basket = calculateBasket(market.code, requestBasket);
     const { processingChannelId } = getServerCheckoutConfig();
+    const reference = createReference("plink");
     const paymentLink = await checkoutRequest<PaymentLinkResponse>(
       "/payment-links",
       {
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
         body: {
           amount: basket.totalAmount,
           currency: market.currency,
-          reference: createReference("plink"),
+          reference,
           processing_channel_id: processingChannelId,
           billing: {
             address: {
@@ -82,6 +84,28 @@ export async function POST(request: Request) {
         },
       },
     );
+    const orderReference = paymentLink.reference ?? reference;
+
+    await saveOrder({
+      reference: orderReference,
+      status: paymentLink.status ?? "Payment link created",
+      amount: basket.totalAmount,
+      currency: market.currency,
+      market: market.code,
+      method: "Payment Link",
+      customerEmail: email,
+      events: [
+        {
+          id: `${orderReference}-payment-link-created`,
+          type: "payment_link_created",
+          label: "Payment link created",
+          createdAt: new Date().toISOString(),
+          amount: basket.totalAmount,
+          currency: market.currency,
+        },
+      ],
+      expiresAt: Date.now() + 1000 * 60 * 60,
+    });
 
     return NextResponse.json(paymentLinkPayload(paymentLink));
   } catch (error) {
